@@ -1,0 +1,314 @@
+---
+title: "Analysis"
+author: "Daniel Hanhart"
+date: "3/16/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+
+library(scLinear)
+library(tidyverse)
+library(ggplot2)
+library(Seurat)
+library(pals)
+library(patchwork)
+#source("helper_functions.R")
+set.seed(42)
+```
+
+## Visium
+
+```{r}
+pipe <- create_adt_predictor()
+pipe <- load_pretrained_model(pipe, model = "all")
+
+neurips_names <- data.frame(gene = pipe$adt_names$to_list())
+
+map_names <- data.frame(
+  visium_name = c("CD163", "CR2", "PCNA", "VIM", "KRT5", "CD68", "CEACAM8", "PTPRC", "HLA-DRA", "PAX5", "SDC1", "PTPRC.2", "CD8A","BCL2", "mouse_IgG2a", "mouse_IgG1k", "mouse_IgG2bk", "rat_IgG2a", "CD19",
+   "PDCD1", "ACTA2", "FCGR3A", "ITGAX", "CXCR5", "EPCAM", "MS4A1", "CD3E", "CD14", "CD40", "PECAM1", "CD4", "ITGAM", "CD27", "CCR7", "CD274"),
+  Neurips_name = c("CD163", "CD21", "PCNA", "VIM", "KRT5", "CD68", "CEACAM8", "CD45", "HLA-DR", "PAX5", "SDC1", "PTPRC.2" , "CD8", "BCL2", "mouse_IgG2a", "mouse_IgG1k", "mouse_IgG2bk", "rat_IgG2a", "CD19",
+  "CD279", "ACTA2", "CD16", "CD11c", "CD185", "EPCAM", "CD20", "CD3", "CD14", "CD40", "CD31", "CD4", "CD11b", "CD27", "CCR7", "CD274")
+)
+
+
+```
+
+
+### read in data (three data sets Gliablastoma 11mm, Breast cancer 6.5mm, Human Tonsil 6.5mm)
+
+```{r}
+if(TRUE){
+## data source
+# https://www.10xgenomics.com/resources/datasets?query=&page=1&configure%5Bfacets%5D%5B0%5D=chemistryVersionAndThroughput&configure%5Bfacets%5D%5B1%5D=pipeline.version&configure%5BhitsPerPage%5D=50&configure%5BmaxValuesPerFacet%5D=1000&menu%5Bproducts.name%5D=Spatial%20Gene%20Expression&refinementList%5Bproduct.name%5D%5B0%5D=Spatial%20Gene%20and%20Protein%20Expression&refinementList%5Binstruments.name%5D%5B0%5D=Visium%20CytAssist
+
+###############################################################################
+#### Tonsil (human)
+path.dir <- "./../local/Visium/tonsil/"
+file.name <- "CytAssist_FFPE_Protein_Expression_Human_Tonsil_filtered_feature_bc_matrix.h5"
+assay <- "RNA"
+object.data <- Seurat::Read10X_h5(paste0(path.dir, file.name))
+rownames(x = object.data[["Antibody Capture"]]) <- gsub(pattern = ".1$", replacement = "",
+                                                             x = rownames(x = object.data[["Antibody Capture"]]))
+rownames(x = object.data[["Antibody Capture"]]) <- map_names$Neurips_name[ match(rownames(x = object.data[["Antibody Capture"]]), map_names$visium_name)]
+
+object <- Seurat::CreateSeuratObject(counts = object.data[["Gene Expression"]], assay = assay, min.cells = 0, min.features = 0)
+object[["mito_percent"]] <- PercentageFeatureSet(object = object, pattern = "^MT-")
+object[["rb_percent"]] <- PercentageFeatureSet(object = object, pattern = "^RP[LS]")
+object[["ADT"]] <- Seurat::CreateAssayObject(object.data[["Antibody Capture"]][, colnames(x = object)])
+
+## the spatial directory has to be in the same directory as the h5 file (extract and move folder into the correct directory)!
+image <- Read10X_Image(
+  image.dir = file.path(path.dir, 'spatial'),
+  filter.matrix = TRUE,
+  image.name = "tissue_lowres_image.png"
+)
+image <- image[Cells(x = object)]
+DefaultAssay(object = image) <- assay
+object[["slice1"]] <- image
+
+image <- Read10X_Image(
+  image.dir = file.path(path.dir, 'spatial'),
+  filter.matrix = TRUE,
+  image.name = "tissue_hires_image.png"
+)
+image <- image[Cells(x = object)]
+DefaultAssay(object = image) <- assay
+object[["hires"]] <- image
+
+tonsil <- object
+
+rm(object, image, assay, file.name, path.dir)
+gc()
+################################################################################
+
+SpatialFeaturePlot(tonsil, features = "nCount_RNA", images = "slice1") + theme(legend.position = "right")
+
+## save seurat objects as rds
+
+saveRDS(tonsil, "./../local/Visium/tonsil/tonsil.rds")
+
+}
+```
+
+
+### Tonsil data qc
+
+```{r, fig.width = 15, fig.height = 10}
+tonsil <- readRDS("./../local/Visium/tonsil/tonsil.rds")
+sobj <- tonsil
+layout <- c(
+  area(t = 0, l = 0, b = 10, r = 2),
+  area(t = 0, l = 2, b = 10, r = 15)
+)
+p1_nfeatures <- Seurat::SpatialFeaturePlot(sobj, features = "nFeature_RNA", images = "slice1")
+p2_nfeatures <- VlnPlot(sobj, features = c("nFeature_RNA"))
+#p_nfeatures <- patchwork::wrap_plots(p2,p1, design = layout)
+
+p1_ncount <- Seurat::SpatialFeaturePlot(sobj, features = "nCount_RNA", images = "slice1")
+p2_ncount <- VlnPlot(sobj, features = c("nCount_RNA"))
+#p_ncount <- patchwork::wrap_plots(p2,p1, design = layout)
+
+p1_mpercent <- Seurat::SpatialFeaturePlot(sobj, features = "mito_percent", images = "slice1")
+p2_mpercent <- VlnPlot(sobj, features = c("mito_percent"))
+#p_mpercent <- patchwork::wrap_plots(p2,p1, design = layout)
+
+
+patchwork::wrap_plots(p1_nfeatures, p1_ncount, p1_mpercent, ncol = 3)
+patchwork::wrap_plots(p2_nfeatures, p2_ncount, p2_mpercent, ncol = 3)
+
+# for now no qc filtering performed min of nFeature is 1641 and nCount_RNA > 200, which seems sufficient.
+print("range nFeature")
+range(sobj@meta.data$nFeature_RNA)
+print("range nCount")
+range(sobj@meta.data$nCount_RNA)
+print("range mito percent")
+range(sobj@meta.data$mito_percent)
+
+## filter some low quality spots
+sobj <- sobj[,sobj$mito_percent < 25 & sobj$nFeature_RNA > 500]
+
+
+## most expressed genes (https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_07_spatial.html)
+C = sobj@assays$RNA@counts
+C@x = C@x/rep.int(colSums(C), diff(C@p))
+most_expressed <- order(Matrix::rowSums(C), decreasing = T)[20:1]
+par(mar = c(5, 10, 4, 2))
+boxplot(as.matrix(Matrix::t(C[most_expressed, ])), cex = 0.1, las = 1, xlab = "% total count per cell",
+    col = (scales::hue_pal())(20)[20:1], horizontal = TRUE)
+
+tonsil <- sobj
+```
+
+
+
+### Normalization
+
+```{r, fig.width = 15, fig.height = 10}
+
+##
+# SCT
+tonsil <- Seurat::SCTransform(tonsil, assay = "RNA", return.only.var.genes = FALSE, verbose = FALSE)
+
+# ADT assay normalization
+tonsil <- Seurat::NormalizeData(tonsil, normalization.method = "CLR", margin = 2, assay = "ADT")
+  
+
+
+DefaultAssay(tonsil) <- "SCT"
+```
+
+### cluster and annotate cells
+
+```{r}
+
+tonsil <- tonsil %>% RunPCA(assay = "SCT") %>% FindNeighbors(dims = 1:30, reduction = "pca") %>% FindClusters(graph.name = "SCT_snn") %>% RunUMAP(dims = 1:30)
+
+DimPlot(tonsil)
+
+runSCMRMA <- function(sobj){
+  DefaultAssay(sobj) <- "SCT"
+  library(scMRMA)
+  Idents(sobj) <- sobj@meta.data$seurat_clusters
+  base::load(system.file("data", "Human_PanglaoDB.Rdata", package = "scMRMA"))
+  anno_res <- scMRMA::scMRMA(input = sobj, species = "Hs", 
+          db = "panglaodb", selfClusters = Idents(sobj))
+  
+  sobj@meta.data$cell_type <- anno_res$multiR$annotationResult[["Level2"]]
+  sobj@meta.data$scMRMA_level_1 <- anno_res$multiR$annotationResult[["Level1"]]
+  sobj@meta.data$scMRMA_level_2 <- anno_res$multiR$annotationResult[["Level2"]]
+  sobj@meta.data$scMRMA_level_3 <- anno_res$multiR$annotationResult[["Level3"]]
+  sobj@meta.data$scMRMA_level_4 <- anno_res$multiR$annotationResult[["Level4"]]
+  return(sobj)
+}
+
+tonsil <- runSCMRMA(tonsil)
+
+print("tonsil")
+tonsil@meta.data$cell_type <- tonsil@meta.data$scMRMA_level_2
+DimPlot(tonsil, group.by = "cell_type")
+SpatialDimPlot(tonsil, group.by = "cell_type", images = "slice1")
+
+
+```
+
+
+### get ADT assay
+
+```{r}
+
+pipe <- create_adt_predictor()
+pipe <- load_pretrained_model(pipe, model = "all")
+pipe$gex_preprocessor$do_log1p <- FALSE
+
+tonsil[["pred_ADT"]] <- adt_predict(pipe = pipe, gexp = tonsil@assays$RNA, normalize = TRUE )
+
+sobj <- list(tonsil = tonsil)
+
+saveRDS(sobj, "./../local/Visium/visium_10xGenomics_predicted(withNeurIPS).rds")
+
+```
+
+### Visualize some fatures Tonsil data
+
+```{r}
+sobjs <- readRDS("./../local/Visium/visium_10xGenomics_predicted(withNeurIPS).rds")
+
+
+p1 <- Seurat::SpatialDimPlot(sobjs$tonsil, group.by = "scMRMA_level_2", images = "slice1", pt.size.factor = 1) + ggtitle("Raw Image")
+DefaultAssay(sobjs$tonsil)  <- "ADT"
+p2 <- Seurat::SpatialFeaturePlot(sobjs$tonsil, images = "slice1", features = c("CD4")) + ggtitle("ADT assay")
+DefaultAssay(sobjs$tonsil)  <- "pred_ADT"
+p3 <- Seurat::SpatialFeaturePlot(sobjs$tonsil, images = "slice1", features = c("CD4")) + ggtitle("pred_ADT assay")
+DefaultAssay(sobjs$tonsil)  <- "RNA"
+p4 <- Seurat::SpatialFeaturePlot(sobjs$tonsil, images = "slice1", features = c("CD4")) + ggtitle("RNA assay")
+p <- patchwork::wrap_plots(p1, p2, p3, p4, nrow = 1)
+p
+pdf("./../local/Visium/Tonsil_CD4_NeurIPStrained.pdf", height = 5, width = 10)
+  p
+dev.off()
+
+
+p1 <- Seurat::SpatialDimPlot(sobjs$tonsil, group.by = "scMRMA_level_2", images = "slice1", pt.size.factor = 1) + ggtitle("Raw Image")
+DefaultAssay(sobjs$tonsil)  <- "ADT"
+p2 <- Seurat::SpatialFeaturePlot(sobjs$tonsil, images = "slice1", features = c("CD27")) + ggtitle("ADT assay")
+DefaultAssay(sobjs$tonsil)  <- "pred_ADT"
+p3 <- Seurat::SpatialFeaturePlot(sobjs$tonsil, images = "slice1", features = c("CD27")) + ggtitle("pred_ADT assay")
+DefaultAssay(sobjs$tonsil)  <- "RNA"
+p4 <- Seurat::SpatialFeaturePlot(sobjs$tonsil, images = "slice1", features = c("CD27")) + ggtitle("RNA assay")
+p <- patchwork::wrap_plots(p1, p2, p3, p4, nrow = 1)
+p
+pdf("./../local/Visium/Tonsil_CD27_NeurIPStrained.pdf", height = 5, width = 10)
+  p
+dev.off()
+
+p1 <- Seurat::SpatialDimPlot(sobjs$tonsil, group.by = "scMRMA_level_2", images = "slice1", pt.size.factor = 0, label = FALSE) + ggtitle("Raw Image") + theme(legend.position = "none")
+DefaultAssay(sobjs$tonsil)  <- "ADT"
+p2 <- Seurat::SpatialFeaturePlot(sobjs$tonsil, images = "slice1", features = c("CD19")) + ggtitle("ADT assay")
+DefaultAssay(sobjs$tonsil)  <- "pred_ADT"
+p3 <- Seurat::SpatialFeaturePlot(sobjs$tonsil, images = "slice1", features = c("CD19")) + ggtitle("pred_ADT assay")
+DefaultAssay(sobjs$tonsil)  <- "RNA"
+p4 <- Seurat::SpatialFeaturePlot(sobjs$tonsil, images = "slice1", features = c("CD19")) + ggtitle("RNA assay")
+p <- patchwork::wrap_plots(p1, p2, p3, p4, nrow = 1)
+p
+pdf("./../local/Visium/Tonsil_CD19_NeurIPStrained.pdf", height = 5, width = 10)
+  p
+dev.off()
+
+
+```
+
+
+### Pearson correlelation
+
+```{r}
+sobj <- readRDS("./../local/Visium/visium_10xGenomics_predicted(withNeurIPS).rds")
+
+
+
+  adt_real <- as.matrix(sobj[["tonsil"]]@assays[["ADT"]]@data)
+  adt_real <- adt_real %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "real")
+  adt_predicted_tonsil <- as.matrix(sobj[["tonsil"]]@assays[["pred_ADT"]]@data)
+  adt_predicted_tonsil <- adt_predicted_tonsil %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "predicted")
+
+    meta <- sobj[["tonsil"]]@meta.data %>% rownames_to_column("cell") %>% dplyr::select("cell","cell_type","scMRMA_level_1","scMRMA_level_2","scMRMA_level_3","scMRMA_level_4")
+  
+  
+DF_tonsil <- adt_real %>% full_join(adt_predicted_tonsil, by = c("gene", "cell")) %>% full_join(meta, by = c("cell")) %>% mutate(dataset = "tonsil")
+  
+
+
+DF <- rbind(DF_tonsil)
+ 
+#  DF_sum <- DF %>% na.omit() %>% mutate(scMRMA_level_2 = factor(scMRMA_level_2)) %>% ungroup() %>% dplyr::group_by(dataset, cell_type, cell)  %>% summarize(pearson = cor(real, predicted, method = "pearson"), spearman = cor(real, predicted, method = "spearman"), n = n()) %>% ungroup() %>% dplyr::group_by(dataset, cell_type) %>% summarize(pearson = mean(pearson), spearman = mean(spearman), n = n())
+#   
+# # by gene
+#   DF_sum <- DF %>% na.omit() %>% mutate(scMRMA_level_2 = factor(scMRMA_level_2)) %>% ungroup() %>% dplyr::group_by(dataset, cell_type, gene)  %>% summarize(pearson = cor(real, predicted, method = "pearson"), spearman = cor(real, predicted, method = "spearman"), n = n())
+#   
+#  
+#  
+ 
+  write.table(DF, file = "./../local/Visium/bit_table_visium_10xGenmoics(withNeurIPS).csv", sep = ",", col.names = TRUE, row.names = FALSE)
+  #DF_sum <- DF %>% na.omit() %>% mutate(cell_type_2 = factor(cell_type_2)) %>% group_by(cell_type_2)  %>% summarize(pearson_sclinear = cor(real, adt_predicted_sclinear, method = "pearson"), spearman_sclinear = cor(real, adt_predicted_sclinear, method = "spearman"))
+  
+  ## calculate per cell cor, then take mean
+  # d <- DF %>% na.omit() %>% group_by(cell)  %>% summarize(pearson = cor(real, predicted, method = "pearson"), spearman = cor(real, predicted, method = "spearman")) %>% ungroup() %>% summarize(pearson = mean(pearson), spearman = mean(spearman))
+  
+  
+```
+
+### Sessioninfo
+
+```{r}
+
+sessionInfo()
+
+```
+
+
+
