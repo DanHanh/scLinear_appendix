@@ -34,3 +34,5 @@ reticulate::py_module_available("torch")
 ## print all functions of scLinear
 print(ls("package:scLinear", all.names = TRUE))
 
+
+pipe <- create_adt_predictor()
