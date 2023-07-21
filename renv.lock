@@ -11,7 +11,7 @@
   "Python": {
     "Version": "3.9.7",
     "Type": "virtualenv",
-    "Name": "/home/triller/.virtualenvs/scLinear_code"
+    "Name": "./renv/virtualenvs/scLinear_code/bin/python"
   },
   "Packages": {
     "BH": {
@@ -44,6 +44,14 @@
       "git_last_commit": "0bc1e0e",
       "git_last_commit_date": "2021-10-26",
       "Hash": "ddc1d29bbe66aaef34b0d17620b61a69",
+      "Requirements": []
+    },
+    "BiocManager": {
+      "Package": "BiocManager",
+      "Version": "1.30.21",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "be203e7eea75514bc1a41c1de39a9bb9",
       "Requirements": []
     },
     "BiocNeighbors": {
@@ -2206,10 +2214,10 @@
     },
     "openssl": {
       "Package": "openssl",
-      "Version": "2.0.6",
+      "Version": "2.1.0",
       "Source": "Repository",
       "Repository": "CRAN",
-      "Hash": "0f7cd2962e3044bb940cca4f4b5cecbe",
+      "Hash": "273a6bb4a9844c296a459d2176673270",
       "Requirements": [
         "askpass"
       ]
@@ -2867,10 +2875,10 @@
     },
     "sass": {
       "Package": "sass",
-      "Version": "0.4.6",
+      "Version": "0.4.7",
       "Source": "Repository",
       "Repository": "CRAN",
-      "Hash": "cc3ec7dd33982ef56570229b62d6388e",
+      "Hash": "6bd4d33b50ff927191ec9acbf52fd056",
       "Requirements": [
         "R6",
         "fs",
@@ -2912,8 +2920,9 @@
       "Version": "0.0.0.9000",
       "Source": "Bioconductor",
       "Remotes": "github::JiaLiVUMC/scMRMA",
-      "Hash": "7d5b1377073089d409e36916dc794294",
+      "Hash": "024b6a849877662909be2b2d313d22f3",
       "Requirements": [
+        "BiocManager",
         "DropletUtils",
         "Matrix",
         "Seurat",
