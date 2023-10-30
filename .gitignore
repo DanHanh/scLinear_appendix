@@ -3,3 +3,4 @@
 .RData
 .Ruserdata
 local
+scripts/__pycache__

@@ -1,0 +1,100 @@
+---
+title: "Train Models"
+author: "Daniel Hanhart"
+date: "10/9/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(reticulate)
+library(scLinear)
+
+
+ad <- reticulate::import("anndata")
+np <- reticulate::import("numpy")
+```
+
+
+## Load NeurIPS data
+
+
+```{r}
+
+gex_train <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_train_mod1.h5ad")
+gex_test <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_test_mod1.h5ad")
+adt_train <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_train_mod2.h5ad")
+adt_test <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_test_mod2.h5ad")
+
+gex_train_r <- gex_train$X
+gex_test_r <- gex_test$X
+adt_train_r <- adt_train$X
+adt_test_r <- adt_test$X
+
+gex_train_meta_r
+
+
+
+pipe <- scLinear::create_adt_predictor(do_log1p = FALSE)
+
+
+gex_train_r <- reticulate::py_to_r(adt_train$X$toarray())
+
+a <- adt_train$X
+
+adt_train$X
+
+pipe$fit()
+
+
+
+a <- gex_train[[1]]
+a
+
+b <- gex_train[[2]]
+c <- gex_train[[3]]
+
+
+np$array(gex_train$X)
+pipe$fit(gex_train=gex_train$X$toarray(),
+         adt_train=adt_train$X$toarray(),
+         gex_test=gex_test$X$toarray(),
+         gex_names=gex_train$var_names$to_numpy(),
+         adt_names=adt_train$var_names$to_numpy())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+gex_train$
+
+a <- Seurat::Convert
+
+a <- SeuratDisk::Convert(gex_train, to = "Seurat")
+
+
+sobj <- readRDS("./../local/pbmc10k_filtered.rds")
+sobj_matrix <- Seurat::GetAssayData(sobj, slot = "counts")
+
+class(sobj)
+class(sobj_matrix)
+
+a <- GetAssayData(sobj, slot = "counts")
+```
+
