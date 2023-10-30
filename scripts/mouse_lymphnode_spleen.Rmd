@@ -70,8 +70,25 @@ gc()
 ```{r}
 mls <- readRDS("./../local/mls_raw.rds")
 
-mls <- scLinear::empty_drops(object = mls, lower = 100, FDR = 0.01, samples = NULL )
 
+mls <- scLinear::prepare_data(mls,
+                            remove_doublets = TRUE,
+                            low_qc_cell_removal = TRUE,
+                            anno_level = c(2,3),
+                            samples = NULL,
+                            integrate_data = FALSE,
+                            remove_empty_droplets = TRUE,
+                            lower = 100, FDR = 0.01,
+                            annotation_selfCluster = TRUE,
+                            resolution = 0.8,
+                            seed = 42,
+                            species = "Mm")
+  
+  
+
+
+
+mls <- scLinear::empty_drops(object = mls, lower = 100, FDR = 0.01, samples = NULL )
 
 mls <- remove_doublets(mls, samples = NULL, print_plots = TRUE)
 
@@ -82,7 +99,9 @@ mls <- cluster_data(mls, resolution = 0.8)
 
 DimPlot(mls, group.by = "seurat_clusters", pt.size = 0.05)
 
-a <- mls %>% anno_celltypes(anno_level = 2, selfClusters = Seurat::Idents(.) ,species = "Mm")
+a <- mls %>% anno_celltypes(anno_level = c(1,2,3,4), selfClusters = Seurat::Idents(.) ,species = "Mm")
+
+DimPlot(a, group.by = "cell_type_4", pt.size = 0.05)
 
 VlnPlot(mls, features = c("nFeature_RNA", "nCount_RNA", "mito_percent"), ncol = 3, pt.size = 0)
 
@@ -100,27 +119,32 @@ pbmc5k <- scLinear::prepare_data(pbmc5k,
                                    resolution = 0.8,
                                    seed = 42)
 
-saveRDS(pbmc5k, "./../local/mls_prepared.rds")
-rm(pbmc5k)
+saveRDS(mls, "./../local/mls_prepared.rds")
+rm(mls)
 gc()
 ```
+
 ### Take a look into the ADT data
+
 ```{r}
-pbmc5k <- readRDS("./../local/PBMC5K_prepared.rds")
+mls <- readRDS("./../local/mls_prepared.rds")
 
-adt_counts <- GetAssayData(pbmc5k, slot = "counts", assay = "ADT")
 
-iso_features <- c("IgG1", "IgG2a", "IgG2b")
-all_features <- rownames(pbmc5k@assays$ADT)
-iso_count <- colSums(x = GetAssayData(object = pbmc5k, assay = "ADT", slot = "counts")[iso_features, , drop = FALSE])
-total_counts_ADT <- colSums(x = GetAssayData(object = pbmc5k, assay = "ADT", slot = "counts")[all_features, , drop = FALSE])
+
+
+adt_counts <- GetAssayData(mls, slot = "counts", assay = "ADT")
+
+iso_features <- c("Isotype-RTK2071", "Isotype-G0114F7", "Isotype-RTK2758", "Isotype-RTK4174", "Isotype-HTK888")
+all_features <- rownames(mls@assays$ADT)
+iso_count <- colSums(x = GetAssayData(object = mls, assay = "ADT", slot = "counts")[iso_features, , drop = FALSE])
+total_counts_ADT <- colSums(x = GetAssayData(object = mls, assay = "ADT", slot = "counts")[all_features, , drop = FALSE])
 
 
 qc.stats <- DropletUtils::cleanTagCounts(adt_counts, controls = iso_features) %>% as.data.frame()
 
 high_control_threshold <- attr(qc.stats$high.controls, "thresholds")
 
-DF <- data.frame(total_counts = total_counts_ADT, iso_counts = iso_count, nFeatures = pbmc5k$nFeature_ADT)
+DF <- data.frame(total_counts = total_counts_ADT, iso_counts = iso_count, nFeatures = mls$nFeature_ADT)
 
 p<-ggplot(DF, aes(x=total_counts_ADT, y=nFeatures, color = iso_count)) + 
   geom_point(binaxis='y', stackdir='center') + theme_bw() +
@@ -140,23 +164,23 @@ p <- ggplot(DF2, aes(x = counts, fill = names)) + geom_histogram() +
 p
 
 ## Normalize ADT data
-pbmc5k <- Seurat::NormalizeData(pbmc5k, normalization.method = "CLR", margin = 2, assay = "ADT")
+mls <- Seurat::NormalizeData(mls, normalization.method = "CLR", margin = 2, assay = "ADT")
 
-saveRDS(pbmc5k, "./../local/PBMC5K_prepared_2.rds")
+saveRDS(mls, "./../local/mls_prepared_2.rds")
 
-rm(pbmc5k, adt_counts, DF, DF2, p, qc.stats, all_features, high_control_threshold, iso_count, iso_features, total_counts_ADT)
+rm(mls, adt_counts, DF, DF2, p, qc.stats, all_features, high_control_threshold, iso_count, iso_features, total_counts_ADT)
 gc()
 ```
 ### UMAP
 
 ```{r}
-pbmc5k <- readRDS("./../local/PBMC5K_prepared_2.rds")
+mls <- readRDS("./../local/mls_prepared_2.rds")
 
-p <- DimPlot(pbmc5k, group.by = "cell_type_2", pt.size = 0.05) + ggtitle("Cell types") +
+p <- DimPlot(mls, group.by = "cell_type_2", pt.size = 0.05) + ggtitle("Cell types") +
   scale_color_manual(values = c("#BE0032","#008856","#0067A5", "#F3C300")) + theme_bw()
 p
-ggsave(filename = "./../local/umap_pbmc5k.pdf", plot = p, width = 9, height = 6, units = "cm")
-rm(p, pbmc5k)
+ggsave(filename = "./../local/umap_mls.pdf", plot = p, width = 9, height = 6, units = "cm")
+rm(p, mls)
 gc()
 ```
 
