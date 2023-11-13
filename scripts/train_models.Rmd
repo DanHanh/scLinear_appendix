@@ -27,10 +27,25 @@ gex_test <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc
 adt_train <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_train_mod2.h5ad")
 adt_test <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_test_mod2.h5ad")
 
-gex_train_r <- gex_train$X
-gex_test_r <- gex_test$X
-adt_train_r <- adt_train$X
-adt_test_r <- adt_test$X
+gex_train$raw$co
+gex_train_r <- gex_train$X %>% Matrix::t()
+rownames(gex_train_r) <- gex_train$var_names$to_list()
+colnames(gex_train_r) <- gex_train$obs_names$to_list()
+
+gex_train$val
+
+gex_test_r <- gex_test$X %>% Matrix::t()
+adt_train_r <- adt_train$X %>% Matrix::t()
+adt_test_r <- adt_test$X %>% Matrix::t()
+
+pipe <- scLinear::create_adt_predictor(do_log1p = FALSE)
+pipe <- fit_predictor(pipe, gexp_train = gex_train_r, adt_train = adt_train_r, normalize_gex = FALSE, normalize_adt = FALSE )
+#gexp_test =gex_test_r 
+class(gex_train_r)[1]
+
+class(pbmc10k@assays$RNA)[1]
+
+pipe.fit(gex_train=gex_train_r, adt_train=adt_train.X.toarray(), gex_test=gex_test.X.toarray(), gex_names=gex_train.var_names.to_numpy(), adt_names=adt_train.var_names.to_numpy())
 
 gex_train_meta_r
 

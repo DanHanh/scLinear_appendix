@@ -37,6 +37,25 @@
     "Name": "./renv/reticulate"
   },
   "Packages": {
+    "AnnotationDbi": {
+      "Package": "AnnotationDbi",
+      "Version": "1.62.2",
+      "Source": "Bioconductor",
+      "Requirements": [
+        "Biobase",
+        "BiocGenerics",
+        "DBI",
+        "IRanges",
+        "KEGGREST",
+        "R",
+        "RSQLite",
+        "S4Vectors",
+        "methods",
+        "stats",
+        "stats4"
+      ],
+      "Hash": "e6c671413b55490c11402f78889384d9"
+    },
     "BH": {
       "Package": "BH",
       "Version": "1.81.0-1",
@@ -55,6 +74,25 @@
         "utils"
       ],
       "Hash": "ed269b250f5844d54dfdc7e749f901aa"
+    },
+    "BiocFileCache": {
+      "Package": "BiocFileCache",
+      "Version": "2.8.0",
+      "Source": "Bioconductor",
+      "Requirements": [
+        "DBI",
+        "R",
+        "RSQLite",
+        "curl",
+        "dbplyr",
+        "dplyr",
+        "filelock",
+        "httr",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "Hash": "4fcebdf379954d5d1a3291006a93499b"
     },
     "BiocGenerics": {
       "Package": "BiocGenerics",
@@ -375,6 +413,19 @@
       ],
       "Hash": "18939552437a335b59fb381e508275d6"
     },
+    "KEGGREST": {
+      "Package": "KEGGREST",
+      "Version": "1.40.1",
+      "Source": "Bioconductor",
+      "Requirements": [
+        "Biostrings",
+        "R",
+        "httr",
+        "methods",
+        "png"
+      ],
+      "Hash": "2988b310648d92e9d5c877d627068b9d"
+    },
     "KernSmooth": {
       "Package": "KernSmooth",
       "Version": "2.23-20",
@@ -540,6 +591,24 @@
         "stats"
       ],
       "Hash": "cc151930e20e16427bc3d0daec62b4a9"
+    },
+    "RSQLite": {
+      "Package": "RSQLite",
+      "Version": "2.3.2",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "DBI",
+        "R",
+        "bit64",
+        "blob",
+        "cpp11",
+        "memoise",
+        "methods",
+        "pkgconfig",
+        "plogr"
+      ],
+      "Hash": "86a771e1a7a985d4b5c9a749c29aac2b"
     },
     "Rcpp": {
       "Package": "Rcpp",
@@ -1040,6 +1109,25 @@
         "utils"
       ],
       "Hash": "0f4e9d8caa6feaa7e409ae6c30f2ca66"
+    },
+    "biomaRt": {
+      "Package": "biomaRt",
+      "Version": "2.56.1",
+      "Source": "Bioconductor",
+      "Requirements": [
+        "AnnotationDbi",
+        "BiocFileCache",
+        "XML",
+        "digest",
+        "httr",
+        "methods",
+        "progress",
+        "rappdirs",
+        "stringr",
+        "utils",
+        "xml2"
+      ],
+      "Hash": "78ac2cc5e45538a556d9866e6f700e40"
     },
     "bit": {
       "Package": "bit",
@@ -3056,6 +3144,13 @@
       ],
       "Hash": "903d68319ae9923fb2e2ee7fa8230b91"
     },
+    "plogr": {
+      "Package": "plogr",
+      "Version": "0.2.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "09eb987710984fc2905c7129c7d85e65"
+    },
     "plotly": {
       "Package": "plotly",
       "Version": "4.10.2",
@@ -3712,7 +3807,7 @@
       "RemoteRepo": "scLinear",
       "RemoteUsername": "DanHanh",
       "RemoteRef": "HEAD",
-      "RemoteSha": "ab0fe946dda26a2e8629994e381d846a8ef10fa4",
+      "RemoteSha": "bcc3fa2e766e1b89fc74d7193461433b671f4a98",
       "Requirements": [
         "BiocManager",
         "DropletUtils",
@@ -3732,7 +3827,7 @@
         "scran",
         "tidyselect"
       ],
-      "Hash": "22e34c1e4408d5bc10e5eba9c96fbe5f"
+      "Hash": "8edf47e36932c3079acf5f6392b8fe6b"
     },
     "scMRMA": {
       "Package": "scMRMA",

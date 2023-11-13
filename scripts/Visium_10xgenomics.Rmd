@@ -264,6 +264,9 @@ dev.off()
 ```
 
 
+
+
+
 ### Pearson correlelation
 
 ```{r}
@@ -300,6 +303,52 @@ DF <- rbind(DF_tonsil)
   # d <- DF %>% na.omit() %>% group_by(cell)  %>% summarize(pearson = cor(real, predicted, method = "pearson"), spearman = cor(real, predicted, method = "spearman")) %>% ungroup() %>% summarize(pearson = mean(pearson), spearman = mean(spearman))
   
   
+```
+
+
+## feature impact analysis Visum Tonsil
+
+```{r}
+sobj <- readRDS("./../local/Visium/visium_10xGenomics_predicted(withNeurIPS).rds")
+tonsil <- sobj$tonsil
+
+pipe <- create_adt_predictor()
+pipe <- load_pretrained_model(pipe, model = "all")
+
+feature_importance <- function(pipe, gexp, slot = "counts", normalize = TRUE){
+    gexp_matrix <- Seurat::GetAssayData(gexp, slot = slot)
+  
+    if(normalize){
+    ## normalize data GEX
+    sce <- SingleCellExperiment::SingleCellExperiment(list(counts = gexp_matrix))
+    clusters <- scran::quickCluster(sce)
+    sce <- scran::computeSumFactors(sce, clusters=clusters)
+    sce <- scuttle::logNormCounts(sce, pseudo.count = 1, center.size.factors = FALSE, log = FALSE)
+    gexp_matrix <- sce@assays@data@listData[["normcounts"]]
+    gexp_matrix <- base::log1p(gexp_matrix)
+  }
+
+  
+  gexp_matrix <- Matrix::t(gexp_matrix)
+
+  gexp_matrix_py <- reticulate::r_to_py(as.matrix(gexp_matrix))
+
+  feature_imp <- pipe$feature_importance(gexp_matrix_py, gex_names = colnames(gexp_matrix))
+  
+  colnames(feature_imp) <- pipe$gex_names$to_list()
+  rownames(feature_imp) <- pipe$adt_names$to_list()
+  
+  return(feature_imp)
+}
+
+
+fi <- feature_importance(pipe, tonsil@assays$RNA, slot = "counts", normalize = TRUE)
+
+
+write.table(fi, "./../local/Visium/feature_importance_tonsil.txt", sep = "\t", row.names = TRUE, col.names = TRUE, quote = FALSE)
+
+saveRDS(fi, "./../local/Visium/feature_importance_tonsil.rds")
+
 ```
 
 ### Sessioninfo

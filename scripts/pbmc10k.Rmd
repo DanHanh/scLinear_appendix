@@ -16,7 +16,14 @@ library(svglite)
 library(Metrics)
 library(pals)
 library(ggpubr)
+library(Matrix)
+library(grid)
+# quickly test if py modules can be loaded
+pipe <- create_adt_predictor()
+rm(pipe)
 
+marker_genes_rna <- readRDS("./../local/marker_genes_rna.rds")
+marker_genes_adt_predicted <- readRDS("./../local/marker_genes_adt_predicted.rds")
 
 set.seed(42)
 ```
@@ -35,32 +42,78 @@ map_names <- data.frame(
 	neurips = c("CD3", "CD4", "CD8", "CD14", "CD15", "CD16", "CD56", "CD19", "CD25", "CD45RA", "CD45RO", "CD279", "TIGIT", "CD127", "IgG2a", "IgG1", "IgG2b")
 )
 
-
 pbmc10k.data <- Seurat::Read10X_h5("./../local/PBMC/pbmc_10k_protein_v3_filtered_feature_bc_matrix.h5")
 rownames(x = pbmc10k.data[["Antibody Capture"]]) <- gsub(pattern = "_[control_]*TotalSeqB", replacement = "",
                                                            x = rownames(x = pbmc10k.data[["Antibody Capture"]]))
-  
 rownames(x = pbmc10k.data[["Antibody Capture"]]) <- map_names$neurips[ match(rownames(x = pbmc10k.data[["Antibody Capture"]]), map_names$pbmc10k)]
 
 
-
-pbmc10k <- Seurat::CreateSeuratObject(counts = pbmc10k.data[["Gene Expression"]], min.cells = 0, min.features = 0)
+pbmc10k <- Seurat::CreateSeuratObject(counts = pbmc10k.data[["Gene Expression"]], min.cells = 1, min.features = 1)
 pbmc10k[["ADT"]] <- Seurat::CreateAssayObject(pbmc10k.data[["Antibody Capture"]][, colnames(x = pbmc10k)])
 Seurat::DefaultAssay(pbmc10k) <- "RNA"
 
 pbmc10k$mito_percent <- Seurat::PercentageFeatureSet(object = pbmc10k, pattern = "^MT-")
-pbmc10k$ribo_percent <- Seurat::PercentageFeatureSet(object = pbmc10k, pattern = "^RP[SL]")
 
 saveRDS(pbmc10k, "./../local/pbmc10k_filtered.rds")
-rm(pbmc10k.data)
+rm(pbmc10k.data, map_names, pbmc10k)
 gc()
 ```
+
+
+### Create Marker list
+
+```{r}
+
+
+
+marker_genes_adt <- list(
+  
+  
+  
+)
+
+```
+
 
 
 ### Preprocess PBMC10K data
 
 ```{r}
-if(!exists("pbmc10k")){pbmc10k <- readRDS("./../local/pbmc10k_filtered.rds")}
+pbmc10k <- readRDS("./../local/pbmc10k_filtered.rds")
+
+## Mark cells for removal based on the ADT assay. Removed only after RNA based qc and preprocessing!
+#pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")
+adt_counts <- GetAssayData(pbmc10k, slot = "counts", assay = "ADT")
+
+iso_features <- c("IgG1", "IgG2a", "IgG2b")
+all_features <- rownames(pbmc10k@assays$ADT)
+iso_count <- colSums(x = GetAssayData(object = pbmc10k, assay = "ADT", slot = "counts")[iso_features, , drop = FALSE])
+total_counts_ADT <- colSums(x = GetAssayData(object = pbmc10k, assay = "ADT", slot = "counts")[all_features, , drop = FALSE])
+
+qc.stats <- DropletUtils::cleanTagCounts(adt_counts, controls = iso_features) %>% as.data.frame()
+high_control_threshold <- attr(qc.stats$high.controls, "thresholds")
+
+
+DF <- data.frame(total_counts = total_counts_ADT, iso_counts = iso_count, nFeatures = pbmc10k$nFeature_ADT)
+
+p<-ggplot(DF, aes(x=total_counts_ADT, y=nFeatures, color = iso_count)) + 
+  geom_point(binaxis='y', stackdir='center') + theme_bw() +
+  scale_color_gradient(low = "blue", high = "red", trans = "log10") + 
+  guides(colour = guide_colourbar(barheight = unit(8, "cm")))
+p
+
+DF2 <- DF %>% pivot_longer(!nFeatures, values_to = "counts", names_to = "names")
+p <- ggplot(DF2, aes(x = counts, fill = names)) + geom_histogram() +
+  theme_bw() +
+  scale_fill_manual(values = kelly()[3:length(kelly())]) +
+  facet_wrap(~names , ncol = 1, scales = "free") +
+  geom_vline(aes(xintercept = xintercept, color = Lines), data.frame(xintercept = high_control_threshold["higher"], Lines = "upper_iso_count_threshold") , linetype = "dashed")
+p
+
+## Mark the cells that should be filtered based on adt values (removed after RNA based pre-processing!)
+pbmc10k@meta.data$adt_filter <- (qc.stats$discard) 
+
+
 
 ## Perform basc preprocessing steps including: lognormalization, removal of doublets, removal of low quality cells, clustering, cell-type annotation
 pbmc10k <- scLinear::prepare_data(pbmc10k,
@@ -75,72 +128,43 @@ pbmc10k <- scLinear::prepare_data(pbmc10k,
                                    resolution = 0.8,
                                    seed = 42)
 
+DimPlot(pbmc10k, group.by = "seurat_clusters")
 DimPlot(pbmc10k, group.by = "cell_type_2")
 
 
-saveRDS(pbmc10k, "./../local/PBMC10K_prepared.rds")
-```
-
-
-### Take a look into the ADT data
-```{r}
-pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")
-
-adt_counts <- GetAssayData(pbmc10k, slot = "counts", assay = "ADT")
-
-iso_features <- c("IgG1", "IgG2a", "IgG2b")
-all_features <- rownames(pbmc10k@assays$ADT)
-iso_count <- colSums(x = GetAssayData(object = pbmc10k, assay = "ADT", slot = "counts")[iso_features, , drop = FALSE])
-total_counts_ADT <- colSums(x = GetAssayData(object = pbmc10k, assay = "ADT", slot = "counts")[all_features, , drop = FALSE])
-
-
-qc.stats <- DropletUtils::cleanTagCounts(adt_counts, controls = iso_features) %>% as.data.frame()
-high_control_threshold <- attr(qc.stats$high.controls, "thresholds")
-
-DF <- data.frame(total_counts = total_counts_ADT, iso_counts = iso_count, nFeatures = pbmc10k$nFeature_ADT)
-
-p<-ggplot(DF, aes(x=total_counts_ADT, y=nFeatures, color = iso_count)) + 
-  geom_point(binaxis='y', stackdir='center') + theme_bw() +
-  scale_color_gradient(low = "blue", high = "red", trans = "log10") + 
-  guides(colour = guide_colourbar(barheight = unit(8, "cm")))
-p
-
-
-## 
-DF2 <- DF %>% pivot_longer(!nFeatures, values_to = "counts", names_to = "names")
-p <- ggplot(DF2, aes(x = counts, fill = names)) + geom_histogram() +
-  theme_bw() +
-  scale_fill_manual(values = kelly()[3:length(kelly())]) +
-  facet_wrap(~names , ncol = 1, scales = "free") +
-  geom_vline(aes(xintercept = xintercept, color = Lines), data.frame(xintercept = high_control_threshold["higher"], Lines = "upper_iso_count_threshold") , linetype = "dashed")
-
-p
-
+##  remove adt based filtered cells 
+# remove cells than have less than 50% percent of nFeatures_adt
+pbmc10k@meta.data$adt_filter  <- (pbmc10k@meta.data$adt_filter | pbmc10k@meta.data$nFeature_ADT < max(pbmc10k@meta.data$nFeature_ADT)/2)
+print("Number of cells filtered based on ADT data")
+table(pbmc10k@meta.data$adt_filter )
+pbmc10k <- subset(pbmc10k, subset = adt_filter == FALSE)
 
 ## Normalize ADT data
 pbmc10k <- Seurat::NormalizeData(pbmc10k, normalization.method = "CLR", margin = 2, assay = "ADT")
+saveRDS(pbmc10k, "./../local/PBMC10K_prepared2.rds")
+rm(pbmc10k,all_features, high_control_threshold, iso_count, iso_features, total_counts_ADT, qc.stats, p, adt_counts, DF, DF2, n_adt_filter)
+gc()
 
-saveRDS(pbmc10k, "./../local/PBMC10K_prepared.rds")
+#saveRDS(pbmc10k, "./../local/PBMC10K_prepared.rds")
 ```
-
-
 
 ### UMAP
 
 ```{r}
-if(!exists("pbmc10k")){pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")}
+pbmc10k <- readRDS("./../local/PBMC10K_prepared2.rds")
 
 p <- DimPlot(pbmc10k, group.by = "cell_type_2", pt.size = 0.05) + ggtitle("Cell types") +
   scale_color_manual(values = c("#BE0032","#008856","#0067A5", "#F3C300")) + theme_bw()
 p
 ggsave(filename = "./../local/umap_pbmc10k.pdf", plot = p, width = 9, height = 6, units = "cm")
-rm(p)
+rm(p, pbmc10k)
+gc()
 ```
 
 ### predict PBMC10K with scLinear
 
 ```{r}
-if(!exists("pbmc10k")){pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")}
+pbmc10k <- readRDS("./../local/PBMC10K_prepared2.rds")
 
 ## load pretrained predictor model scLinear
 pipe <- create_adt_predictor()
@@ -152,65 +176,14 @@ eval_res <- evaluate_predictor(pipe, pbmc10k@assays$RNA, pbmc10k@assays$ADT)
 pbmc10k[["predicted_adt_sclinear"]] <- assay_predicted
 
 saveRDS(pbmc10k, "./../local/PBMC10K_predicted.rds")
-rm(assay_predicted, eval_res,pipe)
+rm(assay_predicted, eval_res,pipe, pbmc10k)
 gc()
 ```
-
-
-
-```{r}
-if(!exists("pbmc10k")){pbmc10k <- readRDS("./../local/PBMC10K_predicted.rds")}
-pipe <- create_adt_predictor()
-pipe$load("./../local/trained_predicors/ADTPredictorKRREnsemble_neuripstrain_alltypes.joblib")
-
-assay_predicted <- adt_predict(pipe, pbmc10k@assays$RNA, normalize = TRUE)
-
-eval_res <- evaluate_predictor(pipe, pbmc10k@assays$RNA, pbmc10k@assays$ADT)
-
-pbmc10k[["predicted_adt_krr"]] <- assay_predicted
-
-
-saveRDS(pbmc10k, "./../local/PBMC10K_predicted.rds")
-rm(assay_predicted, eval_res,pipe)
-gc()
-```
-
-`
-
-### bit table (real vs preducted)
-
-```{r}
-# if(!exists("pbmc10k")){pbmc10k <- readRDS("./../local/PBMC10K_predicted.rds")}
-# 
-#   adt_real <- as.matrix(pbmc10k@assays[["ADT"]]@data)
-#   adt_real <- adt_real %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "real")
-#   adt_predicted_sclinear <- as.matrix(pbmc10k@assays[["predicted_adt_sclinear"]]@data)
-#   adt_predicted_sclinear <- adt_predicted_sclinear %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "predicted_sclinear")
-#   adt_predicted_krr <- as.matrix(pbmc10k@assays[["predicted_adt_krr"]]@data)
-#   adt_predicted_krr <- adt_predicted_krr %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "predicted_krr")
-#   
-#   
-#   meta <- pbmc10k@meta.data %>% rownames_to_column("cell") %>% dplyr::select("cell","cell_type_1","cell_type_2","cell_type_3","cell_type_4")
-#   
-#   
-#   DF <- adt_real %>% full_join(adt_predicted_sclinear, by = c("gene", "cell")) %>%  full_join(adt_predicted_krr, by = c("gene", "cell"))  %>% full_join(meta, by = c("cell"))
-#   
-#   write.table(DF, file = "./../local/PBMC/bit_table_pbmc10k.csv", sep = ",", col.names = TRUE, row.names = FALSE)
-#   #DF_sum <- DF %>% na.omit() %>% mutate(cell_type_2 = factor(cell_type_2)) %>% group_by(cell_type_2)  %>% summarize(pearson_sclinear = cor(real, adt_predicted_sclinear, method = "pearson"), spearman_sclinear = cor(real, adt_predicted_sclinear, method = "spearman"))
-# 
-#   ## calculate per cell cor, then take mean
-#    #d <- DF %>% na.omit() %>% group_by(cell)  %>% summarize(pearson = cor(real, predicted_sclinear, method = "pearson"), spearman = cor(real, predicted_sclinear, method = "spearman")) %>% ungroup() %>% summarize(pearson = mean(pearson), spearman = mean(spearman))
-#   
-#   
-#   d <- DF %>% na.omit() %>% group_by(gene)  %>% summarize(pearson = cor(real, predicted_sclinear, method = "pearson"), spearman = cor(real, predicted_sclinear, method = "spearman")) #%>% ungroup() %>% summarize(pearson = mean(pearson), spearman = mean(spearman))
-#   
-```
-
 
 ### bit table (RNA / protein predicted vs protein real)
 
 ```{r}
-if(!exists("pbmc10k")){pbmc10k <- readRDS("./../local/PBMC10K_predicted.rds")}
+pbmc10k <- readRDS("./../local/PBMC10K_predicted.rds")
 
 adt_real <- as.matrix(pbmc10k@assays[["ADT"]]@data)
 adt_real <- adt_real %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "real")
@@ -232,7 +205,7 @@ rna_raw$gene2[rna_raw$gene %in% c("NCAM1")] <- "CD56"
 rna_raw$gene2[rna_raw$gene %in% c("IL2RA")] <- "CD25"
 rna_raw$gene2[rna_raw$gene %in% c("PDCD1")] <- "CD279"
 rna_raw$gene2[rna_raw$gene %in% c("IL7R")] <- "CD127"
-### PTPRC -> CD45RA / CD45RO (ignored for nown not clear to which isoform the gene counts should be compared to!)
+### PTPRC -> CD45RA / CD45RO (ignored for now not clear to which isoform the gene counts should be compared to!)
 #-
 rna_raw <- rna_raw %>% mutate(gene = gene2) %>% dplyr::select("gene", "cell", "rna_raw") %>% dplyr:: filter(gene %in% unique(adt_real$gene))
 ## combine complex expression by taking the mean expression value
@@ -259,597 +232,287 @@ rna_real <- rna_real %>% mutate(gene = gene2) %>% dplyr::select("gene", "cell", 
 ## combine complex expression by taking the mean expression value
 rna_real <- rna_real %>% group_by(cell, gene) %>% summarise(rna_normalized = mean(rna_normalized))
 
-
-
-
 meta <- pbmc10k@meta.data %>% rownames_to_column("cell") %>% dplyr::select("cell","cell_type_1","cell_type_2","cell_type_3","cell_type_4")
-
 
 DF <- adt_real %>% full_join(adt_predicted_sclinear, by = c("gene", "cell")) %>%  full_join(rna_real, by = c("gene", "cell")) %>% full_join(rna_raw, by = c("gene", "cell")) %>% full_join(meta, by = c("cell"))
 
 write.table(DF, file = "./../local/PBMC/bit_table_pbmc10k_2.csv", sep = ",", col.names = TRUE, row.names = FALSE)
-#DF_sum <- DF %>% na.omit() %>% mutate(cell_type_2 = factor(cell_type_2)) %>% group_by(cell_type_2)  %>% summarize(pearson_sclinear = cor(real, adt_predicted_sclinear, method = "pearson"), spearman_sclinear = cor(real, adt_predicted_sclinear, method = "spearman"))
-
-## calculate per cell cor, then take mean
- #d <- DF %>% na.omit() %>% group_by(cell)  %>% summarize(pearson = cor(real, predicted_sclinear, method = "pearson"), spearman = cor(real, predicted_sclinear, method = "spearman")) %>% ungroup() %>% summarize(pearson = mean(pearson), spearman = mean(spearman))
-
-
-d <- DF %>% na.omit() %>% group_by(gene)  %>% summarize(pearson_pADT_vs_rADT = cor(real, predicted_sclinear, method = "pearson"), pearson_normalizedRNA_vs_rADT = cor(real, rna_normalized, method = "pearson"), pearson_rawRNA_vs_rADT = cor(real, rna_raw, method = "pearson")) #%>% ungroup() %>% summarize(pearson = mean(pearson), spearman = mean(spearman))
-
-
-d <- d %>% pivot_longer(!gene, values_to = "pearson", names_to = "comparison") %>% arrange(desc(pearson))
-
-d$gene <- factor(d$gene, levels = unique(d$gene))
-d$comparison <- factor(d$comparison, levels = c("pearson_pADT_vs_rADT", "pearson_normalizedRNA_vs_rADT", "pearson_rawRNA_vs_rADT"))
-
-p <- ggplot(d, aes(x = gene, y = pearson, fill = comparison)) + geom_bar(stat="identity", position=position_dodge()) + theme_bw() + scale_fill_manual(values = kelly()[4:length(kelly())])
-p
-
-ggsave(filename = "./../local/RNA_ADT_correlation.pdf", plot = p, width = 15, height = 10)
-```
-
-### Visualize by gene / cell type
-
-```{r}
-a
-df <- DF %>% na.omit()
-
-cor_label <- df %>% group_by(gene) %>% summarise(cor = round(cor(predicted_sclinear, real), digits = 2), slope = round(coef(lm(predicted_sclinear ~ real))[[2]], digits = 2))
-gene_factors <- cor_label %>% arrange(desc(cor))  %>% pull("gene") %>% unique()
-
-df$gene <- factor(df$gene, levels=gene_factors) 
-df <- df %>% arrange(desc(gene))
-
-ggplot(df, aes(x = real, y = predicted_sclinear, color = gene, legend = gene)) + 
-  geom_point(size = 0.01) +
-  geom_smooth(method = "lm", show.legend = FALSE, se = FALSE) + 
-  theme_bw() + 
-  guides(color = guide_legend( shape = 15), fill = guide_legend( shape = 15)) +
-  scale_colour_manual(values = kelly()[3:length(kelly())]) + 
-  theme(text = element_text(size = 10),
-          axis.text.x = element_text(size = 10),
-          axis.text.y = element_text(size = 10),
-          legend.key = element_rect(color = "black"),
-          legend.key.height = unit(0.3,"points"),
-          legend.key.width = unit(0.3,"points")) +
-  guides(color = guide_legend(override.aes = list(size=6, shape = 15))) +
-  labs(fill = "Gene", color = "Gene")
-```
-
-
-
-
-################################################################################
-
-
-
-
-
-```{r}
-
-pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")
-
-
-t_cells <- pbmc10k %>% base::subset(subset = cell_type == "T")
-b_cells <- pbmc10k %>% base::subset(subset = cell_type == "B")
-nk_cells <- pbmc10k %>% base::subset(subset = cell_type == "NK cells")
-monocytes <- pbmc10k %>% base::subset(subset = cell_type == "Monocyte")
-
-pipe <- create_adt_predictor()
-
-## for all
-res <- list()
-pipe <- load_pretrained_model(pipe, model = "all")
-pipe$gex_preprocessor$do_log1p <- FALSE
-res[["T cells"]] <- evaluate_predictor(pipe, t_cells@assays$RNA, t_cells@assays$ADT, normalize = TRUE)
-res[["B cells"]] <- evaluate_predictor(pipe, b_cells@assays$RNA, b_cells@assays$ADT, normalize = TRUE)
-res[["NK cells"]] <- evaluate_predictor(pipe, nk_cells@assays$RNA, nk_cells@assays$ADT, normalize = TRUE)
-res[["Monocytes"]] <- evaluate_predictor(pipe, monocytes@assays$RNA, monocytes@assays$ADT, normalize = TRUE)
-res_all <- do.call( rbind, res)
-colnames(res_all) <- c("RMSE", "Pearson", "Spearman")
-res_all <- cbind(res_all, model = "all")
-res_all <- res_all %>% as.data.frame() %>% rownames_to_column("name")
-
-
-##bcell model
-res <- list()
-pipe <- load_pretrained_model(pipe, model = "bcell")
-pipe$gex_preprocessor$do_log1p <- FALSE
-res[["T cells"]] <- evaluate_predictor(pipe, t_cells@assays$RNA, t_cells@assays$ADT, normalize = TRUE)
-res[["B cells"]] <- evaluate_predictor(pipe, b_cells@assays$RNA, b_cells@assays$ADT, normalize = TRUE)
-res[["NK cells"]] <- evaluate_predictor(pipe, nk_cells@assays$RNA, nk_cells@assays$ADT, normalize = TRUE)
-res[["Monocytes"]] <- evaluate_predictor(pipe, monocytes@assays$RNA, monocytes@assays$ADT, normalize = TRUE)
-res_bcell <- do.call( rbind, res)
-colnames(res_bcell) <- c("RMSE", "Pearson", "Spearman")
-res_bcell <- cbind(res_bcell, model = "bcell")
-res_bcell <- res_bcell %>% as.data.frame() %>% rownames_to_column("name")
-
-
-##nkcell model
-res <- list()
-pipe <- load_pretrained_model(pipe, model = "nkcell")
-pipe$gex_preprocessor$do_log1p <- FALSE
-res[["T cells"]] <- evaluate_predictor(pipe, t_cells@assays$RNA, t_cells@assays$ADT, normalize = TRUE)
-res[["B cells"]] <- evaluate_predictor(pipe, b_cells@assays$RNA, b_cells@assays$ADT, normalize = TRUE)
-res[["NK cells"]] <- evaluate_predictor(pipe, nk_cells@assays$RNA, nk_cells@assays$ADT, normalize = TRUE)
-res[["Monocytes"]] <- evaluate_predictor(pipe, monocytes@assays$RNA, monocytes@assays$ADT, normalize = TRUE)
-res_nkcell <- do.call( rbind, res)
-colnames(res_nkcell) <- c("RMSE", "Pearson", "Spearman")
-res_nkcell <- cbind(res_nkcell, model = "nkcell")
-res_nkcell <- res_nkcell %>% as.data.frame() %>% rownames_to_column("name")
-
-
-##tcell model
-res <- list()
-pipe <- load_pretrained_model(pipe, model = "tcell")
-pipe$gex_preprocessor$do_log1p <- FALSE
-res[["T cells"]] <- evaluate_predictor(pipe, t_cells@assays$RNA, t_cells@assays$ADT, normalize = TRUE)
-res[["B cells"]] <- evaluate_predictor(pipe, b_cells@assays$RNA, b_cells@assays$ADT, normalize = TRUE)
-res[["NK cells"]] <- evaluate_predictor(pipe, nk_cells@assays$RNA, nk_cells@assays$ADT, normalize = TRUE)
-res[["Monocytes"]] <- evaluate_predictor(pipe, monocytes@assays$RNA, monocytes@assays$ADT, normalize = TRUE)
-res_tcell <- do.call( rbind, res)
-
-colnames(res_tcell) <- c("RMSE", "Pearson", "Spearman")
-res_tcell <- cbind(res_tcell, model = "tcell")
-res_tcell <- res_tcell %>% as.data.frame() %>% rownames_to_column("name")
-
-
-res <- rbind(res_all, res_bcell, res_nkcell, res_tcell)
-
-saveRDS(res, "./../local/results.rds")
 
 ```
 
-### UMAP
+### RNA, ADT, ADT predicted correlation comparison
 
 ```{r}
-library(pals)
-kelly()
-p <- DimPlot(pbmc10k, group.by = "cell_type") + ggtitle("Cell types") +
-  scale_color_manual(values = c("#BE0032","#008856","#0067A5", "#F3C300")) + theme_bw()
-p
+my_pal <- c("#E7E7E0","#A2A187", "#525240", "#03878F", "#F2B531","#ED5958","#68C6A4", "#113245")
 
-ggsave(filename = "./../local/umap.svg", plot = p)
-
-# red "#BE0032"
-# yellow "#F3C300"
-#blue "#0067A5"
-#green "#008856"
-
-```
-
-```{r}
-res <- readRDS("./../local/results.rds")
-
-res$name <-  unlist(res$name)
-res$RMSE <-  unlist(res$RMSE)
-res$Pearson <-  unlist(res$Pearson)
-res$Spearman <-  unlist(res$Spearman)
-res$model <-  unlist(res$model)
+DF <- read.table("./../local/PBMC/bit_table_pbmc10k_2.csv", header = T, sep=',')
+df <- DF %>% na.omit() %>% group_by(gene)  %>%
+      summarize(pearson_pADT_vs_rADT = cor(real, predicted_sclinear, method = "pearson"),
+                pearson_normalizedRNA_vs_rADT = cor(real, rna_normalized, method = "pearson"),
+                pearson_rawRNA_vs_rADT = cor(real, rna_raw, method = "pearson"))
 
 
+df <- df %>% pivot_longer(!gene, values_to = "pearson", names_to = "comparison") %>% arrange(desc(pearson))
 
-DF <- res %>% as.data.frame()
-DF <- DF %>% pivot_longer(values_to = "value", cols = -c(name, model), names_to = "measure")
-DF$measure <- factor(DF$measure, levels = c("RMSE", "Pearson", "Spearman"))
-## dummy variable to change axis range
-dummy <- data.frame(measure = c("RMSE", "RMSE", "Pearson", "Pearson", "Spearman", "Spearman") , value = c(range(DF %>% filter(measure == "RMSE") %>% pull("value") ), min(DF$value), 1, min(DF$value), 1), model = c("all","all","all","all","all","all"), name = c("T cells","T cells","T cells","T cells","T cells","T cells"))
-dummy$measure <- factor(dummy$measure, levels = c("RMSE", "Pearson", "Spearman"))
+df$gene <- factor(df$gene, levels = unique(df$gene))
+df$comparison <- factor(df$comparison, levels = c("pearson_pADT_vs_rADT", "pearson_normalizedRNA_vs_rADT", "pearson_rawRNA_vs_rADT"))
 
-p <- ggplot(DF, aes(x = model, y = value, fill = name, group_by = measure)) +
-  geom_bar(stat="identity", position=position_dodge( width = 0.9)) +
+p <- ggplot(df, aes(x = gene, y = pearson, fill = comparison)) + geom_bar(stat="identity", position=position_dodge()) +
   theme_bw() +
-  geom_blank(data = dummy) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
-        text = element_text(size = 30)) +
-  facet_grid(.~ measure, scales = "free_y") + scale_fill_manual(values = c("#BE0032","#008856","#0067A5","#F3C300")) +
-  labs()
-p
-
-ggsave(filename = "./../local/results.svg", plot = p, height = 10, width = 10)
-ggsave(filename = "./../local/results.pdf", plot = p, height = 10, width = 10)
-
-
-```
-
-
-### predicted vs test scatter plot
-
-```{r}
-#### investigate difference in spearman, pearson correlation bcell
-pipe <- create_adt_predictor()
-
-#### bcell
-pipe <- load_pretrained_model(pipe, model = "bcell")
-pipe$gex_preprocessor$do_log1p <- FALSE
-evaluate_predictor(pipe, b_cells@assays$RNA, b_cells@assays$ADT, normalize = TRUE)
-
-assay_predicted <- adt_predict(pipe, b_cells@assays$RNA)
-assay_test <- b_cells@assays$ADT
-
-p <- predicted_vs_test_plot(assay_predicted, assay_test)
-p <- p + ggtitle("B cells, B cell model")
-p
-ggsave(filename = "./../local/test_vs_pred_Bcells_modelB.svg", plot = p)
-
-
-#### bcell full model
-pipe <- load_pretrained_model(pipe, model = "all")
-pipe$gex_preprocessor$do_log1p <- FALSE
-evaluate_predictor(pipe, b_cells@assays$RNA, b_cells@assays$ADT, normalize = TRUE)
-
-assay_predicted <- adt_predict(pipe, b_cells@assays$RNA)
-assay_test <- b_cells@assays$ADT
-
-p <- predicted_vs_test_plot(assay_predicted, assay_test)
-p <- p + ggtitle("B cells, All cell model")
-p
-ggsave(filename = "./../local/test_vs_pred_Bcells_modelAll.svg", plot = p)
-
-
-
-#### tcell
-pipe <- load_pretrained_model(pipe, model = "tcell")
-pipe$gex_preprocessor$do_log1p <- FALSE
-evaluate_predictor(pipe, t_cells@assays$RNA, t_cells@assays$ADT, normalize = TRUE)
-
-assay_predicted <- adt_predict(pipe, t_cells@assays$RNA)
-assay_test <- t_cells@assays$ADT
-
-p <- predicted_vs_test_plot(assay_predicted, assay_test)
-p <- p + ggtitle("T cells, T cell model")
-p
-ggsave(filename = "./../local/test_vs_pred_Tcells_modelT.svg", plot = p)
-
-
-#### nkcells
-pipe <- load_pretrained_model(pipe, model = "nkcell")
-pipe$gex_preprocessor$do_log1p <- FALSE
-evaluate_predictor(pipe, nk_cells@assays$RNA, nk_cells@assays$ADT, normalize = TRUE)
-
-assay_predicted <- adt_predict(pipe, nk_cells@assays$RNA)
-assay_test <- nk_cells@assays$ADT
-
-p <- predicted_vs_test_plot(assay_predicted, assay_test)
-p <- p + ggtitle("NK cells, NK cell model")
-p
-ggsave(filename = "./../local/test_vs_pred_NKcells_modelNK.svg", plot = p)
-
-
-#### all cells full model
-pipe <- load_pretrained_model(pipe, model = "all")
-pipe$gex_preprocessor$do_log1p <- FALSE
-evaluate_predictor(pipe, pbmc10k@assays$RNA, pbmc10k@assays$ADT, normalize = TRUE)
-
-assay_predicted <- adt_predict(pipe, pbmc10k@assays$RNA)
-assay_test <- pbmc10k@assays$ADT
-
-p <- predicted_vs_test_plot(assay_predicted, assay_test)
-p <- p + ggtitle("All cells, All cell model")
-p
-ggsave(filename = "./../local/test_vs_pred_Allcells_modelAll.svg", plot = p)
-
-#### monocytes full model
-pipe <- load_pretrained_model(pipe, model = "all")
-pipe$gex_preprocessor$do_log1p <- FALSE
-evaluate_predictor(pipe, monocytes@assays$RNA, monocytes@assays$ADT, normalize = TRUE)
-
-assay_predicted <- adt_predict(pipe, monocytes@assays$RNA)
-assay_test <- monocytes@assays$ADT
-
-p <- predicted_vs_test_plot(assay_predicted, assay_test)
-p <- p + ggtitle("Monocytes, All cell model")
-p
-
-
-```
-
-
-
-```{r}
-
-pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")
-
-t_cells <- pbmc10k %>% base::subset(subset = cell_type == "T")
-
-
-## create train and test set
-set.seed(42)
-indx <- sample(1:length(colnames(t_cells)), size = length(colnames(t_cells)), replace = FALSE)
-t_cells_train <- t_cells[,indx[1:2000]]
-t_cells_test <- t_cells[,indx[2001:length(colnames(t_cells))]]
-
-## create predictor
-pipe <- create_adt_predictor()
-
-pipe <- fit_predictor(pipe = pipe, gexp_train = t_cells_train@assays[["RNA"]],
-              adt_train = t_cells_train@assays[["ADT"]],
-              normalize = TRUE)
-
-
-
-evaluate_predictor(pipe = pipe,
-                  gexp_test = t_cells_test@assays[["RNA"]],
-                  adt_test = t_cells_test@assays[["ADT"]],
-                  normalize = TRUE)
-
-
-t_cells_test@assays[["predicted_ADT"]] <-  adt_predict(pipe = pipe, gexp = t_cells_test@assays[["RNA"]], normalize = TRUE)
-
-
-assay_predicted <- t_cells_test@assays[["predicted_ADT"]]
-assay_test <- t_cells_test@assays[["ADT"]]
-
-p <- predicted_vs_test_plot(assay_predicted, assay_test)
-p <- p + ggtitle("T cells, T cell model")
-p
-
-
-################################################################################
-
-
-pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")
-
-
-
-## create train and test set
-set.seed(42)
-indx <- sample(1:length(colnames(pbmc10k)), size = length(colnames(pbmc10k)), replace = FALSE)
-pbmc10k_train <- pbmc10k[,indx[1:5000]]
-pbmc10k_test <- pbmc10k[,indx[5001:length(colnames(pbmc10k))]]
-
-## create predictor
-pipe <- create_adt_predictor()
-
-pipe <- fit_predictor(pipe = pipe, gexp_train = pbmc10k_train@assays[["RNA"]],
-              adt_train = pbmc10k_train@assays[["ADT"]],
-              normalize = TRUE)
-
-
-
-evaluate_predictor(pipe = pipe,
-                  gexp_test = pbmc10k_test@assays[["RNA"]],
-                  adt_test = pbmc10k_test@assays[["ADT"]],
-                  normalize = TRUE)
-
-
-pbmc10k_test@assays[["predicted_ADT"]] <-  adt_predict(pipe = pipe, gexp = pbmc10k_test@assays[["RNA"]], normalize = TRUE)
-
-
-assay_predicted <- pbmc10k_test@assays[["predicted_ADT"]]
-assay_test <- pbmc10k_test@assays[["ADT"]]
-
-p <- predicted_vs_test_plot(assay_predicted, assay_test)
-p <- p + ggtitle("all cells, all cell model")
-p
-
-
-```
-
-
-
-
-
-## KRR
-
-```{r}
-# pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")
-# 
-# pipe <- create_adt_predictor()
-# 
-# pipe$load("./../local/ADTPredictorKRREnsemble_neuripstrain_alltypes.joblib")
-# pipe$gex_preprocessor$do_log1p <- FALSE
-# evaluate_predictor(pipe = pipe,
-#                   gexp_test = pbmc10k@assays[["RNA"]],
-#                   adt_test = pbmc10k@assays[["ADT"]],
-#                   normalize = TRUE)
-# 
-# 
-
-
-
-
-
-pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")
-
-
-t_cells <- pbmc10k %>% base::subset(subset = cell_type == "T")
-b_cells <- pbmc10k %>% base::subset(subset = cell_type == "B")
-nk_cells <- pbmc10k %>% base::subset(subset = cell_type == "NK cells")
-
-
-pipe <- create_adt_predictor()
-
-## for all
-res <- list()
-pipe$load("./../local/ADTPredictorKRREnsemble_neuripstrain_alltypes.joblib")
-pipe$gex_preprocessor$do_log1p <- FALSE
-res[["t_cells"]] <- evaluate_predictor(pipe, t_cells@assays$RNA, t_cells@assays$ADT, normalize = TRUE)
-res[["b_cells"]] <- evaluate_predictor(pipe, b_cells@assays$RNA, b_cells@assays$ADT, normalize = TRUE)
-res[["nk_cells"]] <- evaluate_predictor(pipe, nk_cells@assays$RNA, nk_cells@assays$ADT, normalize = TRUE)
-res_all <- do.call( rbind, res)
-colnames(res_all) <- c("RMSE", "Pearson", "Spearman")
-res_all <- cbind(res_all, model = "all")
-res_all <- res_all %>% as.data.frame() %>% rownames_to_column("name")
-
-res <- res_all
-
-res$name <-  unlist(res$name)
-res$RMSE <-  unlist(res$RMSE)
-res$Pearson <-  unlist(res$Pearson)
-res$Spearman <-  unlist(res$Spearman)
-res$model <-  unlist(res$model)
-
-DF <- res %>% as.data.frame()
-DF <- DF %>% pivot_longer(values_to = "value", cols = -c(name, model), names_to = "measure")
-DF$measure <- factor(DF$measure, levels = c("RMSE", "Pearson", "Spearman"))
-## dummy variable to change axis range
-dummy <- data.frame(measure = c("RMSE", "RMSE", "Pearson", "Pearson", "Spearman", "Spearman") , value = c(range(DF %>% filter(measure == "RMSE") %>% pull("value") ), min(DF$value), 1, min(DF$value), 1), model = c("all","all","all","all","all","all"), name = c("t_cells","t_cells","t_cells","t_cells","t_cells","t_cells"))
-dummy$measure <- factor(dummy$measure, levels = c("RMSE", "Pearson", "Spearman"))
-
-p <- ggplot(DF, aes(x = model, y = value, fill = name, group_by = measure)) +
-  geom_bar(stat="identity", position=position_dodge()) +
-  theme_bw() +
-  geom_blank(data = dummy) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  facet_wrap(.~ measure, scales = "free_y") + scale_fill_manual(values = c("#BE0032","#0067A5","#F3C300"))
+  scale_fill_manual(values = rev(c(my_pal))[5:length(my_pal)], 
+                    labels=c('Predicted ADT vs meassured ADT', 'Normalized RNA expression vs meassured ADT', 'Raw RNA expression vs meassured ATD')) +
+  labs(fill = "Comparison") +
+  ylab("Pearson correlation") +
+  xlab("Gene") +
+  ggtitle("")
 p
 
-ggsave(filename = "./../local/KRREnsemble.svg", plot = p)
+#ggsave("./../local/panels/Final/Supplementary/1/A.PBMC10K_Protein_RNA_correlation.r1.pdf", width = 20, height = 29/4, units = 'cm')
+#ggsave(filename = "./../local/RNA_ADT_correlation_pbmc5k.pdf", plot = p, width = 15, height = 10)
+```
 
+##### Heatmap
+
+```{r, fig.width= 20/2, fig.height = 29/2}
+my_pal <- c("#E7E7E0","#A2A187", "#525240", "#03878F", "#F2B531","#ED5958","#68C6A4", "#113245")
+
+DF <- read.table("./../local/PBMC/bit_table_pbmc10k_2.csv", header = T, sep=',')
+d <- DF %>% na.omit() %>% group_by(gene)  %>%
+      summarize(pearson_pADT_vs_rADT = cor(real, predicted_sclinear, method = "pearson"),
+                pearson_normalizedRNA_vs_rADT = cor(real, rna_normalized, method = "pearson"),
+                pearson_rawRNA_vs_rADT = cor(real, rna_raw, method = "pearson")) %>% column_to_rownames("gene")
+
+d <- d %>% arrange(desc(pearson_pADT_vs_rADT),desc(pearson_normalizedRNA_vs_rADT), desc(pearson_rawRNA_vs_rADT))
+
+p <- ComplexHeatmap::pheatmap(d, scale = "row", 
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   display_numbers = round(as.matrix(d),2),
+                   labels_col = c('Predicted ADT\nvs\nMeasured ADT\n\n', 'Normalized RNA Expression\nvs\nMeasured ADT\n\n', 'Raw RNA Expression\nvs\nMeasured ATD\n\n'),
+                   legend = TRUE,
+                   angle_col = c("0"),
+                   color = rev(brewer.rdbu(11))[2:10],
+                   number_color = "black", border_color = "white", border = TRUE, border_gp = gpar(col = "black", lty = 1, lwd = 1.5),
+                   number_format ="%.2f"  , fontsize_number = 6,
+                   column_names_side = c("top"), row_names_side = c("left"),
+                   fontsize = 6,
+                   fontsize_row = 6,
+                   fontsize_col = 5,
+                   column_names_max_height = unit(100, "cm"),
+                   heatmap_legend_param = list(title = "z score"))
+#hcl.colors(50, "sunsetdark", rev=F)
+ComplexHeatmap::draw(p, padding = unit(c(0, 0, 20, 0), "mm"))
+
+pdf("./../local/panels/Final/Supplementary/1/C.PBMC10K_Protein_RNA_correlation_heatmap.r1.pdf", width = (20/2)/2.54, height = (29/3 * 2)/2.54)
+  ComplexHeatmap::draw(p, padding = unit(c(2, 2, 20, 2), "mm"))
+dev.off()
+```
+
+
+
+```{r, fig.width=20/3, fig.height=29/4}
+#########
+### E ###
+#########
+PBMC <- read.table("./../local/PBMC/bit_table_pbmc10k_2.csv", header = T, sep=',')
+PBMC <- PBMC %>% dplyr::select(-c(rna_normalized, rna_raw))
+PBMC <- na.omit(PBMC)
+
+cors <- PBMC %>% group_by(gene) %>% dplyr::summarise(correlation = cor(real, predicted_sclinear))
+ggplot(cors, aes(x=reorder(gene, correlation), y= correlation,fill=correlation)) + geom_bar(stat="identity", col="black") + coord_flip() +
+    theme_classic2() + scale_fill_gradientn(colours = inferno(11)) + ylab("Pearson\n(Real vs ScLinear)") + xlab("Protein") + theme(legend.position = "none") +
+  ggtitle("PBMC CITE-seq\n(10k cells)") + theme(plot.title = element_text(hjust = 0.5))
+
+ggsave("./../local/panels/Final/Main/1/E.PBMC10K_Pearson.v2.pdf", width = 20/3, height = 29/3, units = 'cm')
+```
+
+
+```{r, fig.width=20/3*2, fig.height=29/3}
+#ggsave("panels/Final/Main/1/E.Pearson.v2.pdf", width = 20/3, height = 29/3, units = 'cm')
+
+#########
+### F ###
+#########
+PBMC2 <- filter(PBMC, gene %in% c("CD19","CD3","CD14","CD56"))
+ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=cell_type_2)) + geom_point(alpha = 0.8, size=0.5) + facet_wrap(~gene, scales = "free") +
+  scale_color_manual(values = my_pal[5:8]) + theme_classic2() + theme(legend.title = element_blank()) +
+  geom_smooth(method=lm, se=FALSE, col=my_pal[2], alpha = 0.5) + geom_rug() +
+  xlab("ScLinear - Predicted") + ylab("Real")
+
+ggsave("./../local/panels/Final/Main/1/F.PBMC10K_Markers.pdf", width = 20/3*2, height = 29/3, units = "cm")
 
 ```
 
-## Create Plots for Paper
 
-### Prediction comparison
+
+### Expression plots
+```{r}
+# pbmc10k <- readRDS("./../local/PBMC10K_predicted.rds")
+# 
+# p <- DimPlot(pbmc10k, group.by = "cell_type_2", pt.size = 0.05) + ggtitle("Cell types") +
+#   scale_color_manual(values = c("#BE0032","#008856","#0067A5", "#F3C300")) + theme_bw()
+# p
+# 
+# create_feature_plot <- function(obj, feature){
+#   DefaultAssay(pbmc10k) <- "ADT"
+#   p1 <- Seurat::FeaturePlot(obj, features = feature, slot = "data") +   
+#               theme(legend.title = element_blank()) + scale_fill_gradientn(colours = inferno(11)) +
+#               theme(legend.position = "none")
+#   
+#   DefaultAssay(pbmc10k) <- "predicted_adt_sclinear"
+#   p2 <- Seurat::FeaturePlot(obj, features = feature, slot = "data") +   
+#               theme(legend.title = element_blank()) + scale_fill_gradientn(colours = inferno(11)) +
+#               theme(legend.position = "none")
+#   
+#   p3 <- ggpubr::ggarrange(p1, p2, nrow = 1)
+#   return(p3)
+# }
+# 
+# create_feature_plot(obj = pbmc10k, feature = "CD14")
+# create_feature_plot(obj = pbmc10k, feature = "CD19")
+# create_feature_plot(obj = pbmc10k, feature = "CD3")
+# create_feature_plot(obj = pbmc10k, feature = "CD56")
+# create_feature_plot(obj = pbmc10k, feature = "CD279")
+# create_feature_plot(obj = pbmc10k, feature = "CD25")
+# create_feature_plot(obj = pbmc10k, feature = "TIGIT")
+# 
+# create_feature_plot(obj = pbmc10k, feature = "CD279")
+# 
+# create_feature_plot(obj = pbmc10k, feature = "CD279")
+# 
+# create_feature_plot(obj = pbmc10k, feature = "CD279")
+# 
+# 
+# a <- pbmc10k
+# a@assays[["predicted_adt_sclinear"]] <- NULL
+# a@assays[["ADT"]] <- NULL
+# #a@assays[["RNA"]] <- NULL
+# a <- a %>% RunPCA(a)
+# 
+# 
+# create_feature_plot(obj = a, feature = "CD279")
+
+```
+
+
+
+### feature impact analysis PBMC10K
+
+```{r}
+if(FALSE){
+  pbmc10k <- readRDS("./../local/PBMC10K_predicted.rds")
+  
+  pipe <- create_adt_predictor()
+  pipe <- load_pretrained_model(pipe, model = "all")
+  
+  feature_importance <- function(pipe, gexp, slot = "counts", normalize = TRUE){
+      gexp_matrix <- Seurat::GetAssayData(gexp, slot = slot)
+    
+      if(normalize){
+      ## normalize data GEX
+      sce <- SingleCellExperiment::SingleCellExperiment(list(counts = gexp_matrix))
+      clusters <- scran::quickCluster(sce)
+      sce <- scran::computeSumFactors(sce, clusters=clusters)
+      sce <- scuttle::logNormCounts(sce, pseudo.count = 1, center.size.factors = FALSE, log = FALSE)
+      gexp_matrix <- sce@assays@data@listData[["normcounts"]]
+      gexp_matrix <- base::log1p(gexp_matrix)
+    }
+    gexp_matrix <- Matrix::t(gexp_matrix)
+    gexp_matrix_py <- reticulate::r_to_py(as.matrix(gexp_matrix))
+    feature_imp <- pipe$feature_importance(gexp_matrix_py, gex_names = colnames(gexp_matrix))
+    colnames(feature_imp) <- pipe$gex_names$to_list()
+    rownames(feature_imp) <- pipe$adt_names$to_list()
+    
+    return(feature_imp)
+  }
+  
+  fi <- feature_importance(pipe, pbmc10k@assays$RNA, slot = "counts", normalize = TRUE)
+  
+  write.table(fi, "./../local/PBMC/feature_importance_pbmc10k.txt", sep = "\t", row.names = TRUE, col.names = TRUE, quote = FALSE)
+  saveRDS(fi, "./../local/PBMC/feature_importance_pbmc10k.rds")
+}
+```
+
+
+
+
+```{r, fig.width=20/3*2, fig.height=29/3}
+
+#ggsave("panels/Final/Main/2/D.CD19.CD3assays.pdf", height = 29/3, width = 20/3*2, units = "cm")
+
+pbmc <- read.table("./../local/PBMC/feature_importance_pbmc10k.txt", header = T)
+
+pbmc_bit_table <- read.table("./../local/PBMC/bit_table_pbmc10k_2.csv", header = T, sep=',')
+pbmc_bit_table <- pbmc_bit_table %>% dplyr::select(-c(rna_normalized, rna_raw))
+pbmc_bit_table <- na.omit(pbmc_bit_table)
+cors <- pbmc_bit_table %>% group_by(gene) %>% dplyr::summarise(correlation = cor(real, predicted_sclinear))
+important_proteins <- cors %>% group_by("gene") %>% slice_max(correlation, n = 2) %>% pull(gene)
+important_proteins <- c("CD3", "CD19")
+
+important_genes <- pbmc %>% as.data.frame() %>% rownames_to_column("protein") %>%
+  dplyr::filter(protein %in% important_proteins) %>%
+  pivot_longer(!protein, values_to = "importance", names_to = "gene") %>%
+  group_by(protein) %>% slice_max(importance, n = 20) %>% pull("gene") %>% unique()
+
+important_features_matrix <- pbmc %>% t() %>% as.data.frame() %>% rownames_to_column("gene") %>%
+  dplyr::filter(gene %in% important_genes) %>% column_to_rownames("gene") %>% t()
+
+important_features_matrix <- important_features_matrix[rownames(important_features_matrix) %in% important_proteins,]
+
+ComplexHeatmap::pheatmap(important_features_matrix)
+```
+
+
+
+### Drop out simulation
+
+
+```{r, fig.width=20/3*2, fig.height=29/3}
+
+obj <-  readRDS("./../local/pbmc10k_filtered.rds")
+df <- GetAssayData(obj, assay = "RNA")
+
+index <- which(df != 0)
+drops <- matrix(nrow = nrow(df), ncol = ncol(df), data = 1)
+drops[index] <- 0
+
+R <- nrow(df)
+C <- ncol(df)
+
+drop_rate <- length(which(drops == 1))/(R*C)
+print(paste0("Initial dropout rate: ", drop_rate))
+
+dropout_data_list <- list()
+
+while(drop_rate < 0.95){
+    index <- which(drops == 0)
+    
+    new_drops <- rbinom(length(index), 1, 0.1)
+    
+    drops[index[which(new_drops == 1)]] <- 1
+    drop_rate <- length(which(drops == 1))/(R*C)
+    print(paste0("New dropout: ", drop_rate))
+    df_drop <- df
+    df_drop[which(drops == 1)] <- 0
+    dropout_data_list[[as.character(drop_rate)]] <- df_drop
+    
+}    
+
+dropout_levels <- names(dropout_data_list)
+for(i in 1:length(dropout_data_list)){
+  check_df <- dropout_data_list[[dropout_levels[i]]]
+  print(length(which(check_df == 0))/(R*C))
+}
+
+
+saveRDS(dropout_data_list, "./../local/pbmc10k_dropout_list.rds")
+```
+
+
+
 
 ```{r}
 
-
-res <- readRDS("./../local/results.rds")
-
-res$name <-  unlist(res$name)
-res$RMSE <-  unlist(res$RMSE)
-res$Pearson <-  unlist(res$Pearson)
-res$Spearman <-  unlist(res$Spearman)
-res$model <-  unlist(res$model)
-
-
-
-DF <- res %>% as.data.frame()
-DF <- DF %>% pivot_longer(values_to = "value", cols = -c(name, model), names_to = "measure")
-DF$measure <- factor(DF$measure, levels = c("RMSE", "Pearson", "Spearman"))
-## dummy variable to change axis range
-dummy <- data.frame(measure = c("RMSE", "RMSE", "Pearson", "Pearson", "Spearman", "Spearman") , value = c(range(DF %>% filter(measure == "RMSE") %>% pull("value") ), min(DF$value), 1, min(DF$value), 1), model = c("all","all","all","all","all","all"), name = c("T cells","T cells","T cells","T cells","T cells","T cells"))
-dummy$measure <- factor(dummy$measure, levels = c("RMSE", "Pearson", "Spearman"))
-
-p <- ggplot(DF, aes(x = model, y = value, fill = name, group_by = measure)) +
-  geom_bar(stat="identity", position=position_dodge(width = 0.7), width = 0.65) +
-  theme_bw() +
-  geom_blank(data = dummy) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
-        text = element_text(size = 30)) +
-  facet_grid(.~ measure, scales = "free_y") + scale_fill_manual(values = c("#BE0032","#008856","#0067A5","#F3C300")) +
-  labs()
-p
-
-ggsave(filename = "./../local/results.svg", plot = p, height = 10, width = 25)
-#ggsave(filename = "./../local/results.pdf", plot = p, height = 10, width = 10)
-```
-
-
-### UMAP
-
-```{r}
-library(pals)
-kelly()
-p <- DimPlot(pbmc10k, group.by = "cell_type") + ggtitle("Cell types") +
-  scale_color_manual(values = c("#BE0032","#008856","#0067A5", "#F3C300")) +
-  theme_bw() +
-  theme(text = element_text(size = 30)) +
-  guides(colour = guide_legend(override.aes = list(size=6)))
-p
-
-ggsave(filename = "./../local/umap.svg", plot = p, height = 8, width = 10)
-
-
-
-
+sessionInfo()
 
 ```
-
-
-### Scatter plot full model
-
-```{r}
-#### all cells full model
-pipe <- load_pretrained_model(pipe, model = "all")
-pipe$gex_preprocessor$do_log1p <- FALSE
-evaluate_predictor(pipe, pbmc10k@assays$RNA, pbmc10k@assays$ADT, normalize = TRUE)
-
-assay_predicted <- adt_predict(pipe, pbmc10k@assays$RNA)
-assay_test <- pbmc10k@assays$ADT
-
-library(RColorBrewer)
-p <- predicted_vs_test_plot(assay_predicted, assay_test) +
-  theme(text = element_text(size = 40),axis.text.x = element_text(size = 10)) +
-  scale_colour_manual(values = kelly()[3:length(kelly())]) +
-  guides(colour = guide_legend(override.aes = list(size=8)))
-p <- p + ggtitle("All cells, all cell types model")
-p
-
-
-ggsave(filename = "./../local/test_vs_pred_Allcells_modelAll.svg", plot = p, height = 15, width  = 20)
-
-
-metadata <- pbmc10k@meta.data
-p <- predicted_vs_test_highlight_plot(assay_predicted, assay_test, metadata, highlight = "B") +
-  theme(text = element_text(size = 40),axis.text.x = element_text(size = 10)) +
-  scale_colour_manual(values = kelly()[3:length(kelly())]) +
-  guides(colour = guide_legend(override.aes = list(size=8)))
-p <- p + ggtitle("All cells, all cell types model")
-p
-ggsave(filename = "./../local/test_vs_pred_Allcells_modelAll_Bhighlithed.svg", plot = p, height = 15, width  = 20)
-
-```
-
-### Scatter plot KRR model
-
-```{r}
-
-pbmc10k <- readRDS("./../local/PBMC10K_prepared.rds")
-
-pipe <- create_adt_predictor()
-
-## for all
-pipe$load("./../local/ADTPredictorKRREnsemble_neuripstrain_alltypes.joblib")
-pipe$gex_preprocessor$do_log1p <- FALSE
-
-evaluate_predictor(pipe, pbmc10k@assays$RNA, pbmc10k@assays$ADT, normalize = TRUE)
-
-assay_predicted <- adt_predict(pipe, pbmc10k@assays$RNA)
-assay_test <- pbmc10k@assays$ADT
-library(RColorBrewer)
-p <- predicted_vs_test_plot(assay_predicted, assay_test) +
-  theme(text = element_text(size = 40),axis.text.x = element_text(size = 10)) +
-  scale_colour_manual(values = kelly()[3:length(kelly())]) +
-  guides(colour = guide_legend(override.aes = list(size=8)))
-p <- p + ggtitle("All cells, KRR model")
-p
-
-
-ggsave(filename = "./../local/test_vs_pred_Allcells_KRR.svg", plot = p, height = 15, width  = 20)
-
-
-################################################################################
-## b cells
-b_cells <- pbmc10k %>% base::subset(subset = cell_type == "B")
-
-
-assay_predicted <- adt_predict(pipe, b_cells@assays$RNA)
-assay_test <- b_cells@assays$ADT
-library(RColorBrewer)
-p <- predicted_vs_test_plot(assay_predicted, assay_test) +
-  theme(text = element_text(size = 40),axis.text.x = element_text(size = 10)) +
-  scale_colour_manual(values = kelly()[3:length(kelly())]) +
-  guides(colour = guide_legend(override.aes = list(size=8)))
-p <- p + ggtitle("B cells, KRR model")
-p
-
-
-ggsave(filename = "./../local/test_vs_pred_Bcells_KRR.svg", plot = p, height = 15, width  = 20)
-
-
-
-
-################################################################################
-
-
-
-```
-
-
-
-
-

@@ -1,0 +1,56 @@
+---
+title: "Cite seq data simulation"
+author: "Daniel Hanhart"
+date: "2023-11-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(SymSim)
+library(Seurat)
+library(rhdf5)
+library(tidyverse)
+library(scDesign3)
+
+
+```
+
+## Cite seq data simulation
+
+
+```{r}
+ncells <- 1000
+ngenes <- 2000
+data(gene_len_pool, package = "SymSim")
+gene_len <- sample(gene_len_pool, ngenes, replace = FALSE)
+
+true_RNAcounts_res <- SimulateTrueCounts(ncells_total=ncells, 
+                                         min_popsize=50, 
+                                         i_minpop=1, 
+                                         ngenes=ngenes, 
+                                         nevf=10, 
+                                         evf_type="discrete", 
+                                         n_de_evf=6, 
+                                         vary="s", 
+                                         Sigma=0.6, 
+                                         phyla=phyla,
+                                         randseed=k+1000)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
