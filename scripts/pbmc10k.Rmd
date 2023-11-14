@@ -18,6 +18,7 @@ library(pals)
 library(ggpubr)
 library(Matrix)
 library(grid)
+library(ggrepel)
 # quickly test if py modules can be loaded
 pipe <- create_adt_predictor()
 rm(pipe)
@@ -58,22 +59,6 @@ saveRDS(pbmc10k, "./../local/pbmc10k_filtered.rds")
 rm(pbmc10k.data, map_names, pbmc10k)
 gc()
 ```
-
-
-### Create Marker list
-
-```{r}
-
-
-
-marker_genes_adt <- list(
-  
-  
-  
-)
-
-```
-
 
 
 ### Preprocess PBMC10K data
@@ -144,8 +129,6 @@ pbmc10k <- Seurat::NormalizeData(pbmc10k, normalization.method = "CLR", margin =
 saveRDS(pbmc10k, "./../local/PBMC10K_prepared2.rds")
 rm(pbmc10k,all_features, high_control_threshold, iso_count, iso_features, total_counts_ADT, qc.stats, p, adt_counts, DF, DF2, n_adt_filter)
 gc()
-
-#saveRDS(pbmc10k, "./../local/PBMC10K_prepared.rds")
 ```
 
 ### UMAP
@@ -468,23 +451,20 @@ ComplexHeatmap::pheatmap(important_features_matrix)
 
 
 ```{r, fig.width=20/3*2, fig.height=29/3}
-
-obj <-  readRDS("./../local/pbmc10k_filtered.rds")
+set.seed(1)
+obj <-  readRDS("./../local/PBMC10K_prepared2.rds")
 df <- GetAssayData(obj, assay = "RNA")
-
 index <- which(df != 0)
 drops <- matrix(nrow = nrow(df), ncol = ncol(df), data = 1)
 drops[index] <- 0
-
 R <- nrow(df)
 C <- ncol(df)
-
 drop_rate <- length(which(drops == 1))/(R*C)
 print(paste0("Initial dropout rate: ", drop_rate))
 
 dropout_data_list <- list()
 
-while(drop_rate < 0.95){
+while(drop_rate < 0.995){
     index <- which(drops == 0)
     
     new_drops <- rbinom(length(index), 1, 0.1)
@@ -504,10 +484,74 @@ for(i in 1:length(dropout_data_list)){
   print(length(which(check_df == 0))/(R*C))
 }
 
-
 saveRDS(dropout_data_list, "./../local/pbmc10k_dropout_list.rds")
 ```
 
+
+
+
+### predict PBMC10K with scLinear for drop out
+
+```{r}
+pbmc10k <- readRDS("./../local/PBMC10K_prepared2.rds")
+
+## load pretrained predictor model scLinear
+pipe <- create_adt_predictor()
+pipe <- load_pretrained_model(pipe, model = "all")
+
+
+dropout_res <- NULL
+## add results without noise
+eval_res <- evaluate_predictor(pipe, pbmc10k@assays$RNA, pbmc10k@assays$ADT)
+df <- GetAssayData(pbmc10k, assay = "RNA")
+index <- which(df != 0)
+drops <- matrix(nrow = nrow(df), ncol = ncol(df), data = 1)
+drops[index] <- 0
+R <- nrow(df)
+C <- ncol(df)
+drop_rate <- length(which(drops == 1))/(R*C)
+dropout_res <- rbind(dropout_res, data.frame(dropout = drop_rate, RMSE= eval_res$RMSE, Pearson = eval_res$Pearson, Spearman = eval_res$Spearman, type = "original"))
+rm(eval_res, R, C, index, df, drops)
+gc()
+
+
+dropout_data_list <- readRDS("./../local/pbmc10k_dropout_list.rds")
+for(i in names(dropout_data_list)){
+  print(i)
+  obj <- pbmc10k
+  obj@assays$RNA <- Seurat::CreateAssayObject(counts = dropout_data_list[[i]])
+  eval_res <- evaluate_predictor(pipe, obj@assays$RNA, obj@assays$ADT)
+  dropout_res <- rbind(dropout_res, data.frame(dropout = i, RMSE= eval_res$RMSE, Pearson = eval_res$Pearson, Spearman = eval_res$Spearman, type = "added_noise"))
+  rm(eval_res)
+}
+
+saveRDS(dropout_res, "./../local/dropout_res_pbmc10k.rds")
+
+```
+
+
+```{r}
+my_pal <- c("#525240", "#03878F")
+
+dropout_res <- readRDS("./../local/dropout_res_pbmc10k.rds")
+
+dropout_res$dropout <- as.numeric(dropout_res$dropout )
+p <- ggplot(dropout_res, aes(x=dropout, y=Pearson, col=type)) + geom_point(size=2) + theme_classic2() + 
+  scale_color_manual(values = c(my_pal)) + scale_fill_manual(values = c(my_pal)) +
+  theme(legend.position = "none") +
+  theme(legend.title = element_blank()) +
+  theme(legend.text = element_text(size = 8)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  xlim(c(NA,1.01)) +
+  scale_x_continuous(labels = scales::number_format(accuracy = 0.01, decimal.mark = '.'),
+                     breaks = seq(round(min(dropout_res$dropout), 2), 1, by = 0.01)) +
+  xlab("Dropout rate") +
+  ylab("Pearson correlation")
+  
+p
+
+ggsave(plot = p, "./../local/panels/Final/Main/2/B.PBMC10K_Dropout.r1.pdf", width = 20/2, height = 29/4, units = 'cm')
+```
 
 
 

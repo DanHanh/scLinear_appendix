@@ -41,34 +41,45 @@ neurips = c("CCR3", "CD103", "CD106", "CD107a", "CD115", "CD11a", "CD11b", "CD11
             "Isotype_RTK4530", "KLRG1", "Ly.49A", "Ly.6A_E", "Ly.6C", "Ly.6G", "CD352", "Ly49D", "Ly49H", "CD161", "Siglec_H", "TCR.Bchain", "TCR.GD", "TCR.RD", "TCR.Va2", "TCR.Va8.3", "TCR.Vb5.1_5.2", "TCR.Vb8.1_8.2", "TER.119", "Tim.4", "VISTA")
  )
 
-# https://www.10xgenomics.com/resources/datasets/Mixture-of-cells-from-mouse-lymph-nodes-and-spleen-stained-with-totalseqc-mouse-universal-cocktail
-mls.data <- Seurat::Read10X_h5("./../local/MouseLymphNodes/4plex_mouse_LymphNode_Spleen_TotalSeqC_multiplex_Multiplex_count_raw_feature_bc_matrix.h5")
 
-## remove HuMsRt. for human, mouse and rat binding antibodies
-rownames(x = mls.data[["Antibody Capture"]]) <- gsub(pattern = "^HuMsRt\\.", replacement = "",
-                                                           x = rownames(x = mls.data[["Antibody Capture"]]))
-## remove HuMs. for human and mouse binding antibodies
-rownames(x = mls.data[["Antibody Capture"]]) <- gsub(pattern = "^HuMs\\.", replacement = "",
-                                                           x = rownames(x = mls.data[["Antibody Capture"]]))
-## remove MsRt. for human and mouse binding antibodies
-rownames(x = mls.data[["Antibody Capture"]]) <- gsub(pattern = "^MsRt\\.", replacement = "",
-                                                           x = rownames(x = mls.data[["Antibody Capture"]]))
-## remove Ms. for mouse binding antibodies
-rownames(x = mls.data[["Antibody Capture"]]) <- gsub(pattern = "^Ms\\.", replacement = "",
-                                                           x = rownames(x = mls.data[["Antibody Capture"]]))
+mls.data <- Seurat::Read10X_h5("./../local/MouseLymphNodes/4plex_mouse_LymphNode_Spleen_TotalSeqC_multiplex_LymphNode1_BC1_AB1_count_sample_filtered_feature_bc_matrix.h5")
 
-rownames(x = mls.data[["Antibody Capture"]]) <- map_names$neurips[ match(rownames(x = mls.data[["Antibody Capture"]]), map_names$mouse)]
 
-# min features set to 0, to model empty droplet removal correctly
-mls <- Seurat::CreateSeuratObject(counts = mls.data[["Gene Expression"]], min.cells = 0, min.features = 0)
-mls[["ADT"]] <- Seurat::CreateAssayObject(mls.data[["Antibody Capture"]][, colnames(x = mls)])
-Seurat::DefaultAssay(mls) <- "RNA"
 
-mls$mito_percent <- Seurat::PercentageFeatureSet(object = mls, pattern = "^mt-")
 
-saveRDS(mls, "./../local/mls_raw.rds")
-rm(mls.data, mls, map_names)
-gc()
+
+
+
+
+# 
+# # https://www.10xgenomics.com/resources/datasets/Mixture-of-cells-from-mouse-lymph-nodes-and-spleen-stained-with-totalseqc-mouse-universal-cocktail
+# mls.data <- Seurat::Read10X_h5("./../local/MouseLymphNodes/4plex_mouse_LymphNode_Spleen_TotalSeqC_multiplex_Multiplex_count_raw_feature_bc_matrix.h5")
+# 
+# ## remove HuMsRt. for human, mouse and rat binding antibodies
+# rownames(x = mls.data[["Antibody Capture"]]) <- gsub(pattern = "^HuMsRt\\.", replacement = "",
+#                                                            x = rownames(x = mls.data[["Antibody Capture"]]))
+# ## remove HuMs. for human and mouse binding antibodies
+# rownames(x = mls.data[["Antibody Capture"]]) <- gsub(pattern = "^HuMs\\.", replacement = "",
+#                                                            x = rownames(x = mls.data[["Antibody Capture"]]))
+# ## remove MsRt. for human and mouse binding antibodies
+# rownames(x = mls.data[["Antibody Capture"]]) <- gsub(pattern = "^MsRt\\.", replacement = "",
+#                                                            x = rownames(x = mls.data[["Antibody Capture"]]))
+# ## remove Ms. for mouse binding antibodies
+# rownames(x = mls.data[["Antibody Capture"]]) <- gsub(pattern = "^Ms\\.", replacement = "",
+#                                                            x = rownames(x = mls.data[["Antibody Capture"]]))
+# 
+# rownames(x = mls.data[["Antibody Capture"]]) <- map_names$neurips[ match(rownames(x = mls.data[["Antibody Capture"]]), map_names$mouse)]
+# 
+# # min features set to 0, to model empty droplet removal correctly
+# mls <- Seurat::CreateSeuratObject(counts = mls.data[["Gene Expression"]], min.cells = 0, min.features = 0)
+# mls[["ADT"]] <- Seurat::CreateAssayObject(mls.data[["Antibody Capture"]][, colnames(x = mls)])
+# Seurat::DefaultAssay(mls) <- "RNA"
+# 
+# mls$mito_percent <- Seurat::PercentageFeatureSet(object = mls, pattern = "^mt-")
+# 
+# saveRDS(mls, "./../local/mls_raw.rds")
+# rm(mls.data, mls, map_names)
+# gc()
 ```
 
 ### Preprocess MLS data
