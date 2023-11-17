@@ -10,8 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(reticulate)
 library(scLinear)
-
-
+library(tidyverse)
 ad <- reticulate::import("anndata")
 np <- reticulate::import("numpy")
 ```
@@ -21,95 +20,135 @@ np <- reticulate::import("numpy")
 
 
 ```{r}
+## get cell types etc. from fully annotated data
+bmmc_annotated <- ad$read_h5ad ("./../local/NeurIPS/annotated_data/openproblems_bmmc_cite_complete.h5ad")
+metadata <- bmmc_annotated$obs %>% data.frame() %>% rownames_to_column("cell")
 
 gex_train <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_train_mod1.h5ad")
 gex_test <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_test_mod1.h5ad")
 adt_train <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_train_mod2.h5ad")
 adt_test <- ad$read_h5ad ("./../local/NeurIPS/competition_data/openproblems_bmmc_cite_phase2_rna.censor_dataset.output_test_mod2.h5ad")
 
-gex_train$raw$co
+# gex
 gex_train_r <- gex_train$X %>% Matrix::t()
 rownames(gex_train_r) <- gex_train$var_names$to_list()
 colnames(gex_train_r) <- gex_train$obs_names$to_list()
+meta <- metadata[metadata$cell %in% colnames(gex_train_r),]
+meta <- meta[match(colnames(gex_train_r), meta$cell),]
+rownames(meta) <- NULL
+meta <- meta %>% column_to_rownames("cell")
+sobj_train <- Seurat::CreateSeuratObject(counts = gex_train_r, meta.data = meta, slot = "data")
 
-gex_train$val
-
-gex_test_r <- gex_test$X %>% Matrix::t()
+# adt
 adt_train_r <- adt_train$X %>% Matrix::t()
+rownames(adt_train_r) <- adt_train$var_names$to_list()
+colnames(adt_train_r) <- adt_train$obs_names$to_list()
+
+if(all(colnames(adt_train_r) == colnames(sobj_train@assays$RNA))){
+  adt_assay <- Seurat::CreateAssayObject(counts = adt_train_r, slot = "data")
+  sobj_train[["ADT"]] <- adt_assay
+}else{stop("Not the same order of cells")}
+
+
+
+
+## for test set
+
+# gex
+gex_test_r <- gex_test$X %>% Matrix::t()
+rownames(gex_test_r) <- gex_test$var_names$to_list()
+colnames(gex_test_r) <- gex_test$obs_names$to_list()
+meta <- metadata[metadata$cell %in% colnames(gex_test_r),]
+meta <- meta[match(colnames(gex_test_r), meta$cell),]
+rownames(meta) <- NULL
+meta <- meta %>% column_to_rownames("cell")
+sobj_test <- Seurat::CreateSeuratObject(counts = gex_test_r, meta.data = meta, slot = "data")
+
+# adt
 adt_test_r <- adt_test$X %>% Matrix::t()
+rownames(adt_test_r) <- adt_test$var_names$to_list()
+colnames(adt_test_r) <- adt_test$obs_names$to_list()
 
-pipe <- scLinear::create_adt_predictor(do_log1p = FALSE)
-pipe <- fit_predictor(pipe, gexp_train = gex_train_r, adt_train = adt_train_r, normalize_gex = FALSE, normalize_adt = FALSE )
-#gexp_test =gex_test_r 
-class(gex_train_r)[1]
-
-class(pbmc10k@assays$RNA)[1]
-
-pipe.fit(gex_train=gex_train_r, adt_train=adt_train.X.toarray(), gex_test=gex_test.X.toarray(), gex_names=gex_train.var_names.to_numpy(), adt_names=adt_train.var_names.to_numpy())
-
-gex_train_meta_r
+if(all(colnames(adt_test_r) == colnames(sobj_test@assays$RNA))){
+  adt_assay <- Seurat::CreateAssayObject(counts = adt_test_r, slot = "data")
+  sobj_test[["ADT"]] <- adt_assay
+}else{stop("Not the same order of cells")}
 
 
-
-pipe <- scLinear::create_adt_predictor(do_log1p = FALSE)
-
-
-gex_train_r <- reticulate::py_to_r(adt_train$X$toarray())
-
-a <- adt_train$X
-
-adt_train$X
-
-pipe$fit()
+saveRDS(sobj_train, "./../local/NeurIPS/neurips_train.rds")
+saveRDS(sobj_test, "./../local/NeurIPS/neurips_test.rds")
+```
 
 
 
-a <- gex_train[[1]]
-a
+### Analyse some NeurIPS data
 
-b <- gex_train[[2]]
-c <- gex_train[[3]]
+```{r}
+sobj_test <- readRDS("./../local/NeurIPS/neurips_test.rds")
 
+## load pretrained predictor model scLinear
+pipe <- create_adt_predictor()
+pipe <- load_pretrained_model(pipe, model = "all")
 
-np$array(gex_train$X)
-pipe$fit(gex_train=gex_train$X$toarray(),
-         adt_train=adt_train$X$toarray(),
-         gex_test=gex_test$X$toarray(),
-         gex_names=gex_train$var_names$to_numpy(),
-         adt_names=adt_train$var_names$to_numpy())
+assay_predicted <- adt_predict(pipe, sobj_test@assays$RNA, normalize = FALSE, slot = "data")
+sobj_test[["predicted_adt_sclinear"]] <- assay_predicted
 
-
-
-
-
+adt_real <- as.matrix(sobj_test@assays[["ADT"]]@data)
+adt_real <- adt_real %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "real")
+adt_predicted_sclinear <- as.matrix(sobj_test@assays[["predicted_adt_sclinear"]]@data)
+adt_predicted_sclinear <- adt_predicted_sclinear %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "predicted_sclinear")
 
 
 
+meta <- sobj_test@meta.data %>% rownames_to_column("cell")
+## add borad cell types
+
+meta$broad_cell_type <- NA
+meta$broad_cell_type[meta$cell_type %in% c('CD4+ T naive', 'CD4+ T activated', 'CD4+ T activated integrinB7+', 'MAIT', 'CD8+ T naive', 'T reg', 'CD8+ T CD49f+', 'CD8+ T CD57+ CD45RA+', 'CD8+ T CD69+ CD45RO+', 'CD8+ T TIGIT+ CD45RA+', 'CD8+ T CD69+ CD45RA+', 'CD8+ T TIGIT+ CD45RO+', 'gdT TCRVD2+', 'CD4+ T CD314+ CD45RA+', 'CD8+ T naive CD127+ CD26- CD101-', 'gdT CD158b+', 'CD8+ T CD57+ CD45RO+', 'dnT', 'T prog cycling')] <- "T"
+
+meta$broad_cell_type[meta$cell_type %in% c('Naive CD20+ B IGKC+', 'Naive CD20+ B IGKC-', 'B1 B IGKC-', 'B1 B IGKC+', 'Transitional B')] <- "B"
+
+meta$broad_cell_type[meta$cell_type %in% c('NK CD158e1+', 'NK')] <- "NK cells"
+
+
+meta$broad_cell_type[meta$cell_type %in% c('cDC2', 'pDCs', 'pDC')] <- "DCs"
+
+meta$broad_cell_type[meta$cell_type %in% c('CD14+ Mono', 'CD16+ Mono')] <- "Monocytes"
+
+meta$broad_cell_type[meta$cell_type %in% c('Proerythroblast', 'Erythroblast', 'Normoblast/Reticulocyte')] <- "Erythro"
+
+meta$broad_cell_type[meta$cell_type %in% c('ILC', 'MK/E prog', 'HSC', 'Lymph prog', 'G/M prog')] <- "Progenitors"
+
+
+#Naive CD20+ B IGKC+
+
+
+
+unique(meta$cell_type[ is.na(meta$broad_cell_type)])
 
 
 
 
 
 
+DF <- adt_real %>% full_join(adt_predicted_sclinear, by = c("gene", "cell"))  %>%  full_join(meta, by = c("cell"))
+
+DF <- DF %>% arrange(gene)
+
+DF$gene <- factor(DF$gene, levels = unique(DF$gene))
 
 
 
+sobj_test
 
 
+eval_res <- evaluate_predictor(pipe, sobj_test@assays$RNA, sobj_test@assays$ADT, normalize_gex = FALSE, normalize_adt = FALSE, slot = "data")
 
-gex_train$
+pbmc10k[["predicted_adt_sclinear"]] <- assay_predicted
 
-a <- Seurat::Convert
+# saveRDS(pbmc10k, "./../local/PBMC10K_predicted.rds")
+# rm(assay_predicted, eval_res,pipe, pbmc10k)
+# gc()
 
-a <- SeuratDisk::Convert(gex_train, to = "Seurat")
-
-
-sobj <- readRDS("./../local/pbmc10k_filtered.rds")
-sobj_matrix <- Seurat::GetAssayData(sobj, slot = "counts")
-
-class(sobj)
-class(sobj_matrix)
-
-a <- GetAssayData(sobj, slot = "counts")
 ```
 

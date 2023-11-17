@@ -293,6 +293,50 @@ dev.off()
 
 
 
+
+##### Boxplots
+```{r, fig.width= 20/2, fig.height = 29/2}
+DF <- read.table("./../local/PBMC/bit_table_pbmc10k_2.csv", header = T, sep=',')
+
+df <- DF %>% na.omit()  %>% group_by(gene)  %>%
+      summarize('scLinear vs ADT' = cor(real, predicted_sclinear, method = "pearson"),
+                'RNA vs ADT' = cor(real, rna_normalized, method = "pearson"))
+
+df <- df %>%pivot_longer(!gene, values_to = "Pearson", names_to = "Comparison")
+df$Comparison <- factor(df$Comparison, levels = rev(sort(unique(df$Comparison))))
+
+df$gene_comp <- paste0(df$gene, "_", df$Comparison)
+
+
+my_pal <- c("#68C6A4", "#A2A187")
+df <- df %>% arrange(gene, Comparison)
+df$name <- df$gene
+df$name[!(df$gene %in% c("CD3", "CD19", "CD14", "CD56"))] <- ""
+pos <- position_jitter(width = 0.2, height = 0, seed = 3)
+ggplot(df, aes(x=Comparison, y = Pearson, fill = Comparison, label = name)) +
+  geom_boxplot(show.legend = FALSE) + 
+  theme_bw() +
+  geom_point(position=pos, size = 0.9) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_fill_manual(values = my_pal) +
+  ylab("Pearson") + xlab("") +
+  theme(legend.position = "none") +
+  geom_label_repel(position = pos,
+                  colour = "black", fill = "white", segment.colour="black",
+                  min.segment.length = 1,
+                  show.legend = TRUE, size = 1.5,
+                  box.padding = 0.25, point.padding = 0) +
+  theme(axis.ticks.x = element_blank(),
+         axis.text.y = element_text(size = 8),
+        panel.spacing = unit(0.05, "lines"),
+        strip.text.x = element_text(size = 7)) +
+  geom_line(aes(group = gene), position = pos, size = 0.25 , color = "darkblue") 
+
+ggsave("./../local/panels/Final/Main/1/B.PBMC10K_Pearson_RNA_correlation.v2.pdf", width = 20/2, height = 29/2, units = 'cm')
+```
+
+
+
 ```{r, fig.width=20/3, fig.height=29/4}
 #########
 ### E ###
@@ -451,9 +495,9 @@ ComplexHeatmap::pheatmap(important_features_matrix)
 
 
 ```{r, fig.width=20/3*2, fig.height=29/3}
-set.seed(1)
+set.seed(42)
 obj <-  readRDS("./../local/PBMC10K_prepared2.rds")
-df <- GetAssayData(obj, assay = "RNA")
+df <- GetAssayData(obj, assay = "RNA", slot = "counts")
 index <- which(df != 0)
 drops <- matrix(nrow = nrow(df), ncol = ncol(df), data = 1)
 drops[index] <- 0
@@ -464,7 +508,7 @@ print(paste0("Initial dropout rate: ", drop_rate))
 
 dropout_data_list <- list()
 
-while(drop_rate < 0.995){
+while(drop_rate < 0.99){
     index <- which(drops == 0)
     
     new_drops <- rbinom(length(index), 1, 0.1)
@@ -493,66 +537,242 @@ saveRDS(dropout_data_list, "./../local/pbmc10k_dropout_list.rds")
 ### predict PBMC10K with scLinear for drop out
 
 ```{r}
-pbmc10k <- readRDS("./../local/PBMC10K_prepared2.rds")
+get_dropout_rate <- function(object){
+  df <- GetAssayData(object, assay = "RNA",  slot = "counts")
+  index <- which(df != 0)
+  drops <- matrix(nrow = nrow(df), ncol = ncol(df), data = 1)
+  drops[index] <- 0
+  R <- nrow(df)
+  C <- ncol(df)
+  drop_rate <- length(which(drops == 1))/(R*C)
+  return(drop_rate)
+}
 
+get_dropout_res <- function(pipe,object_test , input_type){
+  do_rate <- get_dropout_rate(object_test)
+  predicted_assay <- adt_predict(pipe = pipe, gexp = object_test@assays[["RNA"]], normalize = TRUE, slot = "counts")
+  object_test[["predicted_adt"]] <- predicted_assay
+
+  adt_real <- as.matrix(object_test@assays[["ADT"]]@data)
+  adt_real <- adt_real %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "real")
+  adt_predicted_sclinear <- as.matrix(object_test@assays[["predicted_adt"]]@data)
+  adt_predicted_sclinear <- adt_predicted_sclinear %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "predicted_adt")
+  
+  
+  meta <- object_test@meta.data %>% rownames_to_column("cell")
+  
+  bit_table <- adt_real %>% full_join(adt_predicted_sclinear, by = c("gene", "cell")) %>% full_join(meta, by = c("cell")) %>% mutate(type = input_type, dropout = do_rate)
+  
+  
+  df <- bit_table %>% dplyr::select(cell, gene, real, predicted_adt, cell_type_2, type, dropout) %>% na.omit() %>% group_by(cell)
+  
+  return(df)
+}
+
+
+pbmc10k <- readRDS("./../local/PBMC10K_prepared2.rds")
 ## load pretrained predictor model scLinear
 pipe <- create_adt_predictor()
 pipe <- load_pretrained_model(pipe, model = "all")
 
 
-dropout_res <- NULL
-## add results without noise
-eval_res <- evaluate_predictor(pipe, pbmc10k@assays$RNA, pbmc10k@assays$ADT)
-df <- GetAssayData(pbmc10k, assay = "RNA")
-index <- which(df != 0)
-drops <- matrix(nrow = nrow(df), ncol = ncol(df), data = 1)
-drops[index] <- 0
-R <- nrow(df)
-C <- ncol(df)
-drop_rate <- length(which(drops == 1))/(R*C)
-dropout_res <- rbind(dropout_res, data.frame(dropout = drop_rate, RMSE= eval_res$RMSE, Pearson = eval_res$Pearson, Spearman = eval_res$Spearman, type = "original"))
-rm(eval_res, R, C, index, df, drops)
-gc()
+dropout_res_list <- list()
+dropout_res_list[["original"]] <- get_dropout_res(pipe, pbmc10k, "original")
 
 
 dropout_data_list <- readRDS("./../local/pbmc10k_dropout_list.rds")
+
 for(i in names(dropout_data_list)){
   print(i)
   obj <- pbmc10k
-  obj@assays$RNA <- Seurat::CreateAssayObject(counts = dropout_data_list[[i]])
-  eval_res <- evaluate_predictor(pipe, obj@assays$RNA, obj@assays$ADT)
-  dropout_res <- rbind(dropout_res, data.frame(dropout = i, RMSE= eval_res$RMSE, Pearson = eval_res$Pearson, Spearman = eval_res$Spearman, type = "added_noise"))
-  rm(eval_res)
+  new_assay <- Seurat::CreateAssayObject(counts = dropout_data_list[[i]])
+  obj[["RNA"]] <- new_assay
+  dropout_res_list[[i]] <- get_dropout_res(pipe, obj, "added_dropout")
+  rm(obj)
+  gc()
 }
+
+dropout_res <- do.call(rbind, dropout_res_list)
 
 saveRDS(dropout_res, "./../local/dropout_res_pbmc10k.rds")
 
 ```
 
 
-```{r}
-my_pal <- c("#525240", "#03878F")
+```{r,  fig.width=20/2, fig.height=29/2}
+pbmc10k <- readRDS("./../local/PBMC10K_predicted.rds")
 
+my_pal <- c("#525240", "#03878F")
 dropout_res <- readRDS("./../local/dropout_res_pbmc10k.rds")
 
-dropout_res$dropout <- as.numeric(dropout_res$dropout )
-p <- ggplot(dropout_res, aes(x=dropout, y=Pearson, col=type)) + geom_point(size=2) + theme_classic2() + 
-  scale_color_manual(values = c(my_pal)) + scale_fill_manual(values = c(my_pal)) +
+
+DF <- dropout_res%>% group_by(cell, dropout, type) %>% summarise(Pearson = cor(real, predicted_adt))
+DF$Pearson <- as.numeric(DF$Pearson )
+
+DF$type [!(DF$type == "original")]<- "added_dropout"
+
+pos <- position_jitter(width = 0, height = 0, seed = 6)
+p <- ggplot(DF, aes(x = dropout, y = Pearson, color = type, group = dropout)) +
+  geom_boxplot(show.legend = FALSE,  outlier.size = 0.2) + theme_bw() +
+  #geom_jitter(position=pos, size = 0.8) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_fill_manual(values = my_pal) +
+  ylab("Pearson\n(Real vs ScLinear)") + xlab("") +
+  theme(legend.position = "none") +
+   scale_color_manual(values = c(my_pal)) + scale_fill_manual(values = c(my_pal))  +
   theme(legend.position = "none") +
   theme(legend.title = element_blank()) +
   theme(legend.text = element_text(size = 8)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  xlim(c(NA,1.01)) +
-  scale_x_continuous(labels = scales::number_format(accuracy = 0.01, decimal.mark = '.'),
-                     breaks = seq(round(min(dropout_res$dropout), 2), 1, by = 0.01)) +
-  xlab("Dropout rate") +
-  ylab("Pearson correlation")
-  
+  ylab("Pearson") +
+  xlab("Dropout rate") + ggtitle("PBMC10K")
+
 p
 
-ggsave(plot = p, "./../local/panels/Final/Main/2/B.PBMC10K_Dropout.r1.pdf", width = 20/2, height = 29/4, units = 'cm')
+ggsave(plot = p, "./../local/panels/Final/Main/2/B.PBMC10K_Dropout_boxplot.r1.pdf", width = 20/2, height = 29/3, units = 'cm')
 ```
 
+```{r}
+pbmc10k <- readRDS("./../local/PBMC10K_predicted.rds")
+
+DF <- pbmc10k@meta.data
+
+df <- DF %>% dplyr::select(cell_type_2)
+table(df)
+
+
+plot_nebulosa <- function(object, assay = "RNA", features,slot = "data", joint = FALSE, title_name = "", tool = "nebulosa"){
+  Seurat::DefaultAssay(object) <- assay
+  if(tool == "nebulosa"){
+    p <- Nebulosa::plot_density(object, features = features, slot = slot, joint = joint) + labs(title = title_name, caption = paste0("Assay: ", assay, "; features: ", paste0(features, collapse = ",")))
+  }else{
+     p <- Seurat::FeaturePlot(object, features = features, slot = slot) + labs(title = title_name, caption = paste0("Assay: ", assay, "; features: ", paste0(features, collapse = ",")))
+  }
+  return(p)
+}
+
+Seurat::DimPlot(pbmc10k, group.by = "seurat_clusters")
+Seurat::DimPlot(pbmc10k, group.by = "cell_type_2")
+
+
+```
+
+### cluster based on adt assays
+```{r, fig.widh = 24, fig.height = 12}
+# pbmc10k@meta.data$RNA_Clusters <- pbmc10k@meta.data$seurat_clusters
+# 
+# pbmc10k <- Seurat::FindVariableFeatures(pbmc10k, assay = "ADT")
+# pbmc10k <- Seurat::FindVariableFeatures(pbmc10k, assay = "predicted_adt_sclinear")
+# 
+# pbmc10k <- Seurat::ScaleData(pbmc10k, assay = "ADT")
+# pbmc10k <- Seurat::ScaleData(pbmc10k, assay = "predicted_adt_sclinear")
+# 
+# pbmc10k <- Seurat::RunPCA(pbmc10k, assay = "ADT", reduction.name = "pca_adt")
+# pbmc10k <- Seurat::RunPCA(pbmc10k, assay = "predicted_adt_sclinear", reduction.name = "pca_predicted_adt")
+# 
+# pbmc10k <- Seurat::FindNeighbors(pbmc10k, assay = "ADT", reduction = "pca_adt")
+# pbmc10k <- Seurat::FindNeighbors(pbmc10k, assay = "predicted_adt_sclinear", reduction = "pca_predicted_adt")
+# 
+# pbmc10k <- Seurat::FindClusters(pbmc10k, graph.name = "ADT_snn")
+# pbmc10k@meta.data$ADT_Clusters <- pbmc10k@meta.data$seurat_clusters
+# 
+# pbmc10k <- Seurat::FindClusters(pbmc10k, graph.name = "predicted_adt_sclinear_snn")
+# pbmc10k@meta.data$predicted_adt_Clusters <- pbmc10k@meta.data$seurat_clusters
+# 
+# 
+# # a <- Seurat::FindNeighbors(a)
+# # a <- Seurat::FindClusters(a)
+# pbmc10k <- Seurat::RunUMAP(pbmc10k, assay = "ADT", dims = 1:min(nrow(pbmc10k@assays$ADT), 30), reduction.name = "umap_adt")
+# pbmc10k <- Seurat::RunUMAP(pbmc10k, assay = "predicted_adt_sclinear", dims = 1:min(nrow(pbmc10k@assays$predicted_adt_sclinear), 30), reduction.name = "umap_predicted_adt")
+# 
+# 
+# 
+# p1 <- Seurat::DimPlot(pbmc10k, group.by = "RNA_Clusters", reduction = "umap")
+# p2 <- Seurat::DimPlot(pbmc10k, group.by = "ADT_Clusters", reduction = "umap_adt")
+# p3 <- Seurat::DimPlot(pbmc10k, group.by = "predicted_adt_Clusters", reduction = "umap_predicted_adt")
+# 
+# p11 <- Seurat::DimPlot(pbmc10k, group.by = "cell_type_2", reduction = "umap")
+# p22 <- Seurat::DimPlot(pbmc10k, group.by = "cell_type_2", reduction = "umap_adt")
+# p33 <- Seurat::DimPlot(pbmc10k, group.by = "cell_type_2", reduction = "umap_predicted_adt")
+# 
+# (p1 | p2 | p3) / (p11 | p22 | p33)
+# 
+# adt_markers <- Seurat::FindAllMarkers(pbmc10k, assay = "ADT")
+# adt_predicted_markers <- Seurat::FindAllMarkers(pbmc10k, assay = "predicted_adt_sclinear")
+# 
+# 
+# 
+
+
+```
+```{r, fig.widh = 12, fig.height = 6}
+# cluster_subtype <- function(object, assay_name = "RNA" ){
+#   
+#   object <- Seurat::FindVariableFeatures(object, assay = assay_name)
+#   object <- Seurat::ScaleData(object, assay = assay_name)
+#   object <- Seurat::RunPCA(object, assay = assay_name)
+#   object <- Seurat::FindNeighbors(object, assay = assay_name)
+#   object <- Seurat::FindClusters(object, graph.name = paste0(assay_name,"_snn"))
+#   object <- Seurat::RunUMAP(object, assay = assay_name, dims = 1:min((nrow(object@assays[[assay_name]])-1), 30))
+#   return(object)
+# }
+# 
+# 
+# sobj_T <- subset(pbmc10k, subset = cell_type_2 == "T")
+# sobj_T <- Seurat::DietSeurat(sobj_T)
+# a <- cluster_subtype(sobj_T, assay = "ADT")
+# 
+# DimPlot(a)
+# 
+# # plot_nebulosa(a, assay = "ADT", features = "CD3", slot = "data")
+# # plot_nebulosa(a, assay = "ADT", features = "CD127", slot = "data")
+# # plot_nebulosa(a, assay = "ADT", features = "CD8", slot = "data")
+# # plot_nebulosa(a, assay = "predicted_adt_sclinear", features = "CD8", slot = "data")
+# # plot_nebulosa(a, assay = "ADT", features = "CD25", slot = "data", tool = "seurat")
+# # plot_nebulosa(a, assay = "predicted_adt_sclinear", features = "CD25", slot = "data", tool = "seurat")
+# plot_nebulosa(a, assay = "ADT", features = "CD45RO", slot = "data", tool = "seurat")
+# plot_nebulosa(a, assay = "predicted_adt_sclinear", features = "CD45RO", slot = "data", tool = "seurat")
+# plot_nebulosa(a, assay = "ADT", features = "CD45RA", slot = "data", tool = "seurat")
+# plot_nebulosa(a, assay = "predicted_adt_sclinear", features = "CD45RA", slot = "data", tool = "seurat")
+# 
+# Seurat::DotPlot(a, assay = c("ADT"), features = shared_proteins, scale = FALSE)
+# Seurat::DotPlot(a, assay = c("predicted_adt_sclinear"), features = shared_proteins, scale = FALSE)
+
+```
+
+### one to one feature comparison
+
+```{r, fig.widh = 12, fig.height = 6}
+shared_proteins <- rownames(pbmc10k@assays$ADT)[rownames(pbmc10k@assays$ADT) %in% rownames(pbmc10k@assays$predicted_adt_sclinear)]
+  
+for(g in shared_proteins){
+  p1 <- plot_nebulosa(pbmc10k, assay = "ADT", features = g, slot = "data")
+  p2 <- plot_nebulosa(pbmc10k, assay = "predicted_adt_sclinear", features = g, slot = "data")
+  print((p1 | p2)) 
+}
+```
+```{r, fig.widh = 12, fig.height = 6}
+shared_proteins <- rownames(pbmc10k@assays$ADT)[rownames(pbmc10k@assays$ADT) %in% rownames(pbmc10k@assays$predicted_adt_sclinear)]
+  
+for(g in shared_proteins){
+  p1 <- plot_nebulosa(pbmc10k, assay = "ADT", features = g, slot = "data", tool = "seurat")
+  p2 <- plot_nebulosa(pbmc10k, assay = "predicted_adt_sclinear", features = g, slot = "data",  tool = "seurat")
+  print((p1 | p2)) 
+}
+```
+
+
+### Try multi color scale in umap
+
+
+
+```{r}
+object <- readRDS("./../local/PBMC10K_predicted.rds")
+
+
+umap <- object@reductions[["umap"]]
+
+```
 
 
 ```{r}
