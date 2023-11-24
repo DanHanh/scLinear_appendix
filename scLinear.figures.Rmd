@@ -1,0 +1,618 @@
+---
+title: "scLinear Figures"
+author: "Daniel Hanhart"
+date: "2023-11-23"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(pals)
+library(tidyverse)
+library(ggpubr)
+library("readxl")
+library(reshape)
+library(ggplotify)
+library(pheatmap)
+library(ggh4x)
+library(cowplot)
+library(ggside)
+library(enrichR)
+library(ggmagnify)
+library(ggrepel)
+library(smplot2)
+library(Seurat)
+library(RColorBrewer)
+library(dplyr)
+library(ggbreak)
+library(patchwork)
+`%!in%` = Negate(`%in%`)
+
+my_pal <- c("#E7E7E0","#A2A187", "#525240", "#03878F", "#F2B531","#ED5958","#68C6A4", "#113245")
+
+
+save_figures <- TRUE
+## create directories
+if(save_figures){
+  dir.create(path = "./local/panels/Final/Main/1/",recursive = TRUE, showWarnings = FALSE)
+  dir.create(path = "./local/panels/Final/Main/2/",recursive = TRUE, showWarnings = FALSE)
+  dir.create(path = "./local/panels/Final/Main/3/",recursive = TRUE, showWarnings = FALSE)
+  dir.create(path = "./local/panels/Final/Supplementary/1/",recursive = TRUE, showWarnings = FALSE)
+  dir.create(path = "./local/panels/Final/Reviewer/1/",recursive = TRUE, showWarnings = FALSE)
+}
+
+```
+
+## Figure 1
+
+### B
+
+```{r, fig.width = (20/3)/2.54, fig.height = (29/4)/2.54}
+Competition_df <- read.table("data/NeurIPS_results.csv", header = T, sep = ",")
+Competition_df <- cbind.data.frame(RMSE = Competition_df$GEX2ADT, Category = "Competition")
+Competition_df <- filter(Competition_df, RMSE < 0.7)
+
+
+test_results <- read_excel("data/neurips-testset.xls")
+test_results <- as.data.frame(test_results)
+test_results[c('Method', 'Seed')] <- str_split_fixed(test_results$Meth, '-', 2)
+
+sclin <- test_results %>% group_by(Method) %>% dplyr::summarise(GEX2ADT = mean(RMSE))
+sclin <- sclin[,2:1]
+names(sclin) <- colnames(Competition_df)
+df <- rbind(Competition_df, sclin)
+df <- df[order(df$RMSE, decreasing = F),]
+df$Rank <- 1:nrow(df)
+
+df$Category <- factor(df$Category, levels = c("Babel_Dance","KRR_new","Vanilla_NN","ScLinear"))
+ggplot(df, aes(x=Rank, y=RMSE, col=Category)) + geom_point(size=2) + theme_classic2() +
+  scale_color_manual(values = c(my_pal)) + scale_fill_manual(values = c(my_pal)) +theme(legend.position = "none") + theme(legend.title = element_blank()) + theme(legend.text = element_text(size = 8)) +
+  geom_label_repel(nudge_y = 0.05,label = ifelse(!is.na(df$Category), as.character(df$Category),"")) +
+  ylim(0.3,0.55)
+
+if(save_figures){ggsave("local/panels/Final/Main/1/B.Neurips.RMSE.r1.pdf", width = 20/3, height = 29/4, units = 'cm')}
+```
+
+### C
+```{r, fig.width = (20/3)/2.54, fig.height = (29/4)/2.54}
+my_data <- read_excel("local/time-memory2.xls",sheet = 2, )
+scLinear <- melt(as.data.frame(my_data), id.vars = "time")
+
+scLinear[c('Method', 'Seed')] <- str_split_fixed(scLinear$variable, '-', 2)
+
+my_data <- read_excel("local/time-memory2.xls",sheet = 1)
+Other <- na.omit(melt(as.data.frame(my_data), id.vars = "time"))
+
+Other[c('Method', 'Seed')] <- str_split_fixed(Other$variable, '-', 2)
+
+Time_RAM <- rbind(scLinear, Other)
+Time <- Time_RAM %>% group_by(Method, Seed) %>% slice(which.max(time))
+Time_sum <- Time %>% group_by(Method) %>% dplyr::summarise(Mean = mean(time), Sd = sd(time))
+
+Time_sum$Method <- factor(Time_sum$Method, levels = c("Babel_Dance","KRR_new","Vanilla_NN","ScLinear"))
+ggplot(Time_sum, aes(x=Method, y=Mean, fill=Method)) + geom_bar(stat="identity") + theme_classic2() +
+  scale_fill_manual(values = my_pal) + theme(legend.position = "none") + ylab("Time (sec)") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  geom_errorbar( aes(x=Method, ymin=Mean-Sd, ymax=Mean+Sd), width=0.2, colour="black", alpha=0.5)
+  
+if(save_figures){ggsave("local/panels/Final/Main/1/C.Time.r1.pdf", width = 20/3, height = 29/4, units = 'cm')}
+```
+
+### D
+```{r, fig.width = (20/3)/2.54, fig.height = (29/4)/2.54}
+RAM <- Time_RAM %>% group_by(Method,Seed) %>% dplyr::summarise(RAM = median(value))
+RAM_sum <- RAM %>% group_by(Method) %>% dplyr::summarise(Mean = mean(RAM), Sd = sd(RAM))
+RAM_sum$Method <- factor(RAM_sum$Method, levels = c("Babel_Dance","KRR_new","Vanilla_NN","ScLinear"))
+ggplot(RAM_sum, aes(x=Method, y=Mean, fill=Method)) + geom_bar(stat="identity") + theme_classic2() +
+  scale_fill_manual(values = my_pal) + theme(legend.position = "none") + ylab("RAM (MB)") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  geom_errorbar( aes(x=Method, ymin=Mean-Sd, ymax=Mean+Sd), width=0.2, colour="black", alpha=0.5)
+  
+if(save_figures){ggsave("local/panels/Final/Main/1/D.RAM.r1.pdf", width = 20/3, height = 29/4, units = 'cm')}
+```
+
+### E
+```{r, fig.width = (20/3)/2.54, fig.height = (29/3)/2.54,}
+PBMC <- read.table("./local/PBMC/bit_table_pbmc10k_2.csv", header = T, sep=',')
+PBMC <- PBMC %>% dplyr::select(-c(rna_normalized, rna_raw))
+
+# de-duplicate the separation of complexes that was used for RNA/ADT comparison
+map <- list(  
+    list(gexp = c("CD3E", "CD3D", "CD3G"), adt = c("CD3")),
+    list(gexp = c("CD8A", "CD8B"), adt = c("CD8"))
+)
+for (m in map){
+  print(paste0("gexp: ", paste0(m$gexp, collapse = ","), "       adt: ", paste0(m$adt, collapse = ",")))
+  gexp_names <- m$gexp
+  adt_name <- m$adt
+  for(gexp_name in gexp_names){
+    PBMC$gene[PBMC$gene == gexp_name] <- adt_name
+  }
+}
+PBMC <- PBMC %>% distinct()
+
+PBMC <- na.omit(PBMC)
+
+cors <- PBMC %>% group_by(gene) %>% dplyr::summarise(correlation = cor(real, predicted_sclinear))
+ggplot(cors, aes(x=reorder(gene, correlation), y= correlation,fill=correlation)) + geom_bar(stat="identity", col="black") + coord_flip() +
+    theme_classic2() + scale_fill_gradientn(colours = inferno(11)) + ylab("Pearson\n(Real vs ScLinear)") + xlab("Protein") + theme(legend.position = "none") +
+  ggtitle("PBMC CITE-seq\n(10k cells)") + theme(plot.title = element_text(hjust = 0.5))
+
+if(save_figures){ggsave("local/panels/Final/Main/1/E.PBMC10K.Pearson.r1.pdf", width = 20/3, height = 29/3, units = 'cm')}
+```
+### F
+```{r, fig.width = (20/3*2)/2.54, fig.height = (29/3)/2.54,}
+PBMC2 <- filter(PBMC, gene %in% c("CD19","CD3","CD14","CD56"))
+ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=cell_type_2)) + geom_point(alpha = 0.8, size=0.5) + facet_wrap(~gene, scales = "free") +
+  scale_color_manual(values = my_pal[5:8]) + theme_classic2() + theme(legend.title = element_blank()) +
+  geom_smooth(method=lm, se=FALSE, col=my_pal[2], alpha = 0.5) + geom_rug() +
+  xlab("ScLinear - Predicted") + ylab("Real")
+if(save_figures){ggsave("local/panels/Final/Main/1/F.PBMC10K.Markers.r1.pdf", width = 20/3*2, height = 29/3, units = "cm")}
+```
+## Figure 3
+
+### A
+```{r, fig.width = (20/3)/2.54, fig.height = (29/3)/2.54,}
+sobj <- readRDS("local/Visium/visium_10xGenomics_predicted(withNeurIPS).rds")
+
+sobj <- sobj$tonsil
+
+sobj$scMRMA_level_2_2 <- paste0(sobj$scMRMA_level_2," cells")
+
+hires <- Read10X_Image(image.dir ="./local/Visium/tonsil/spatial", image.name = "tissue_hires_image.png")
+lowres <- sobj@images$slice1
+hires@coordinates = hires@coordinates[rownames(lowres@coordinates),]
+hires@scale.factors$lowres = hires@scale.factors$hires
+hires@assay = lowres@assay
+hires@key = lowres@key
+sobj@images$hires = hires
+
+SpatialDimPlot(sobj, group.by = "scMRMA_level_2_2",images = "hires", pt.size.factor = 6) + scale_fill_manual(values = my_pal[c(5,8)]) +
+  theme(legend.position = "top") + theme(legend.title = element_blank()) + theme(legend.text  = element_text(size=15)) 
+
+if(save_figures){ggsave("local/panels/Final/Main/3/A.Spatial.cell.r1.pdf", width = 20/3, height = 29/3, units = "cm")}
+```
+
+### B
+```{r, fig.width = (20/3)/2.54, fig.height = (29/3)/2.54,}
+
+df <- read.table("./local/Visium/bit_table_visium_10xGenmoics(withNeurIPS).csv", header = T, sep=",")
+df <- filter(df, dataset == "tonsil")
+df <- na.omit(df)
+df$scMRMA_level_2 <- paste0(df$scMRMA_level_2, " cells")
+
+cors <- df %>% group_by(gene) %>% dplyr::summarise(cor = cor(real, predicted))
+
+ggplot(cors, aes(x=reorder(gene, cor), y= cor,fill=cor)) + geom_bar(stat="identity", col="black") + coord_flip() +
+  theme_classic2() + scale_fill_gradientn(colours = inferno(11)) + ylab("Pearson\n(Real vs ScLinear)") + xlab("Protein") + theme(legend.position = "none") +
+  ggtitle("Tonsil Spatial\n(Multi-omics)") + theme(plot.title = element_text(hjust = 0.5))
+
+if(save_figures){ggsave("local/panels/Final/Main/3/B.Cors.spatial.r1.pdf", width = 20/3, height = 29/3, units = "cm")}
+```
+### C
+```{r, fig.width = (20/3)/2.54, fig.height = (29/3*2)/2.54}
+p1 <- ggplot(df[which(df$gene %in% c("CD19")),], aes(x=predicted, y=real, col=scMRMA_level_2)) + geom_density2d() + stat_cor(inherit.aes = F, aes(x=predicted, y=real)) + theme_classic2() +
+  scale_fill_manual(values = kelly()[c(7,5,4,6)]) +  facet_wrap(~gene)+ theme(legend.position = "top") +
+  ylab("Real") + xlab("scLinear - Predicted") + scale_color_manual(values = my_pal[c(5,8)]) + geom_point(alpha=0.5,size=0.5) + 
+  scale_y_break(c(2.1,3.5)) + scale_y_break(c(3.7,4.3)) + theme(axis.title = element_blank()) + theme(legend.title = element_blank()) +
+  scale_y_continuous(breaks = c(0,0.5,1,1.5,2,2.5, 3, 3.5, 3.7, 4.5)) +
+  theme(
+    axis.text.y.right = element_blank(),
+    axis.line.y.right = element_blank(),
+    axis.ticks.y.right = element_blank()
+  ) 
+
+
+p2 <- ggplot(df[which(df$gene %in% c("CD3")),], aes(x=predicted, y=real, col=scMRMA_level_2)) + geom_density2d() + stat_cor(inherit.aes = F, aes(x=predicted, y=real)) + theme_classic2() +
+  scale_fill_manual(values = kelly()[c(7,5,4,6)]) +  facet_wrap(~gene) + theme(legend.position = "top") +
+  ylab("Real") + xlab("scLinear - Predicted")+ scale_color_manual(values = my_pal[c(5,8)]) + geom_point(alpha=0.5,size=0.5) +
+  theme(axis.title = element_blank())+ theme(legend.title = element_blank()) +
+  scale_y_continuous(breaks = c(0,0.5,1,1.5,2,2.5, 3, 3.5, 4, 4.5)) +
+  theme(
+    axis.text.y.right = element_blank(),
+    axis.line.y.right = element_blank(),
+    axis.ticks.y.right = element_blank()
+  ) + theme(axis.text.y = element_text(margin = margin(t = 0, r = 0, b = 0, l = 10))) + theme(plot.margin = unit(c(0,0.5,0,0.2), units = "cm"))
+
+
+
+p2 <- p2 + theme(legend.position = "none")
+p1 <- p1 + theme(legend.position = "none")
+
+p2 / p1
+
+if(save_figures){ggsave("local/panels/Final/Main/3/C.Spatial.proteins.r1.pdf", width = 20/3, height = (29/3*2), units = "cm")}
+
+```
+### D
+
+```{r, fig.width = (20/3*2)/2.54, fig.height = (29/3)/2.54}
+min_cutoff <- "q10"
+max_cutoff <- "q90"
+DefaultAssay(sobj) <- "RNA"
+p1 <- SpatialFeaturePlot(sobj, features = c("CD19"), min.cutoff = min_cutoff, max.cutoff = max_cutoff, images = "hires", stroke = 0,pt.size.factor = 6) +
+  theme(legend.position = "bottom") + ggtitle("RNA") + theme(plot.title = element_text(size=10, hjust = 0.5)) +
+  theme(legend.title = element_blank()) + scale_fill_gradientn(colours = inferno(11)) + theme(legend.position = "none")
+
+DefaultAssay(sobj) <- "ADT"
+p2 <- SpatialFeaturePlot(sobj, features = c("CD19"), min.cutoff = min_cutoff, max.cutoff = max_cutoff, images = "hires", stroke = 0,pt.size.factor = 6) +
+  theme(legend.position = "bottom") + ggtitle("ADT") + theme(plot.title = element_text(size=10, hjust = 0.5))+
+  theme(legend.title = element_blank()) + scale_fill_gradientn(colours = inferno(11)) + theme(legend.position = "none")
+
+DefaultAssay(sobj) <- "pred_ADT"  
+p3 <- SpatialFeaturePlot(sobj, features = c("CD19"), min.cutoff = min_cutoff, max.cutoff = max_cutoff, images = "hires", stroke = 0,pt.size.factor = 6) +
+  theme(legend.position = "bottom") + ggtitle("ScLinear") + theme(plot.title = element_text(size=10, hjust = 0.5))+
+  theme(legend.title = element_blank()) + scale_fill_gradientn(colours = inferno(11)) + theme(legend.position = "none")
+
+DefaultAssay(sobj) <- "RNA"
+p1.2 <- SpatialFeaturePlot(sobj, features = c("CD3E"), min.cutoff = min_cutoff, max.cutoff = max_cutoff, images = "hires", stroke = 0,pt.size.factor = 6) +
+  theme(legend.position = "bottom") + ggtitle("RNA") + theme(plot.title = element_text(size=10, hjust = 0.5)) +
+  theme(legend.title = element_blank()) + scale_fill_gradientn(colours = inferno(11)) + theme(legend.position = "none")
+
+DefaultAssay(sobj) <- "ADT"
+p2.2 <- SpatialFeaturePlot(sobj, features = c("CD3"), min.cutoff = min_cutoff, max.cutoff = max_cutoff, images = "hires", stroke = 0,pt.size.factor = 6) +
+  theme(legend.position = "bottom") + ggtitle("ADT") + theme(plot.title = element_text(size=10, hjust = 0.5))+
+  theme(legend.title = element_blank()) + scale_fill_gradientn(colours = inferno(11)) + theme(legend.position = "none")
+
+
+DefaultAssay(sobj) <- "pred_ADT"  
+p3.2 <- SpatialFeaturePlot(sobj, features = c("CD3"), min.cutoff = min_cutoff, max.cutoff = max_cutoff, images = "hires", stroke = 0,pt.size.factor = 6) +
+  theme(legend.position = "bottom") + ggtitle("ScLinear") + theme(plot.title = element_text(size=10, hjust = 0.5))+
+  theme(legend.title = element_blank()) + scale_fill_gradientn(colours = inferno(11)) + theme(legend.position = "none")
+
+p1<- ggarrange(p1,p2,p3, nrow = 1, ncol = 3) 
+p2<- ggarrange(p1.2,p2.2,p3.2, nrow = 1, ncol = 3) 
+p <- ggarrange(p2,p1, nrow = 2)
+p
+if(save_figures){ggsave(plot = p, "local/panels/Final/Main/3/D.CD19.CD3assays.r1.pdf", height = 29/3, width = 20/3*2, units = "cm")}
+
+```
+
+### E
+```{r, fig.width = (20/3 * 1.6)/2.54, fig.height = ((29/3) -2)/2.54}
+pbmc <- read.table("local/PBMC/feature_importance_pbmc10k.txt", header = T)
+cd3_cd19_pbmc <- pbmc[c("CD3","CD19"),]
+rownames(cd3_cd19_pbmc) <- paste0(rownames(cd3_cd19_pbmc),"_PBMC") 
+tonsil <- read.table("local/Visium/feature_importance_tonsil.txt", header = T)
+cd3_cd19_tonsil <- tonsil[c("CD3","CD19"),]
+rownames(cd3_cd19_tonsil) <- paste0(rownames(cd3_cd19_tonsil),"_Tonsil") 
+
+cd3_cd19 <- rbind(cd3_cd19_pbmc, cd3_cd19_tonsil)
+cd3_cd19 <- t(cd3_cd19)
+cd3_cd19 <- cd3_cd19[order(cd3_cd19[,1], decreasing = T),]
+cd3_pbmc <- rownames(cd3_cd19)[order(cd3_cd19[,1], decreasing = T)[1:20]]
+cd19_pbmc <- rownames(cd3_cd19)[order(cd3_cd19[,2], decreasing = T)[1:20]]
+cd3_tonsil <- rownames(cd3_cd19)[order(cd3_cd19[,3], decreasing = T)[1:20]]
+cd19_tonsil <- rownames(cd3_cd19)[order(cd3_cd19[,4], decreasing = T)[1:20]]
+genes <- unique(c(cd3_tonsil, cd19_tonsil))
+
+
+myColor <- colorRampPalette(rev(brewer.rdbu(11)))(11)
+myBreaks <- c(seq(min(cd3_cd19[genes,3:4]), 0, length.out=ceiling(11/2) + 1), 
+              seq(max(cd3_cd19[genes,3:4])/11, max(cd3_cd19[genes,3:4]), length.out=floor(11/2)))
+
+pheatmap(t(cd3_cd19[genes,3:4]), color=myColor, breaks=myBreaks, legend = F, cluster_rows = F, treeheight_col = 1,
+                   border_color = "black", fontsize_col = 8, labels_row = c("CD3","CD19"))
+
+if(save_figures){ggsave("local/panels/Final/Main/3/E.Heatmap.Top20.r1.pdf", height = (29/3) - 2, width = (20/3*1.6) , units = "cm")}
+
+```
+### F
+
+```{r, fig.width = (20/3 * 1.5)/2.54, fig.height = (29/3)/2.54}
+go <- enrichr(cd3_tonsil, databases = "GO_Biological_Process_2023")
+go <- go$GO_Biological_Process_2023
+go <- go[1:5,]
+
+ggplot(go, aes(x=reorder(Term, Adjusted.P.value), y=-log10(Adjusted.P.value))) + 
+  geom_bar(stat="identity", col="black", fill=rev(brewer.rdbu(11))[11]) +
+  theme_classic2() + xlab("") + theme(axis.text.x = element_text(angle=90, hjust = 1)) + 
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) + ylab("-log10(Adj.Pvalue)")
+
+go2 <- enrichr(cd19_tonsil,databases = "GO_Biological_Process_2023")
+
+go2 <- go2$GO_Biological_Process_2023
+go2 <- go2[1:5,]
+ggplot(go2, aes(x=reorder(Term, Adjusted.P.value), y=-log10(Adjusted.P.value))) + 
+  geom_bar(stat="identity", col="black", fill=rev(brewer.rdbu(11))[11]) +
+  theme_classic2() + xlab("") + theme(axis.text.x = element_text(angle=90, hjust = 1)) + 
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) + ylab("-log10(Adj.Pvalue)")
+
+go$Marker <- "CD3"
+go2$Marker <- "CD19"
+
+go <- rbind(go, go2)
+strip <- strip_themed(background_x = elem_list_rect(fill = my_pal[c(5,8)]), text_x = element_text(color="white"))
+
+ggplot(go, aes(x=reorder(Term, Adjusted.P.value), y=-log10(Adjusted.P.value))) + 
+  geom_bar(stat="identity", col="black", fill="white") +
+  theme_classic2() + xlab("") + theme(axis.text.x = element_text(angle=90, hjust = 1)) + 
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) + ylab("-log10(Adj.Pvalue)") + 
+  facet_wrap2(~Marker, scales = "free", strip = strip) +
+  scale_fill_manual(values = my_pal[c(5,8)]) + theme(legend.position = "none") + theme(axis.text.x = element_text(vjust=0.5))
+
+if(save_figures){ggsave("local/panels/Final/Main/3/F.GO.Top20.r1.pdf", height = 29/3, width = 20/3*1.5, units = "cm")}
+```
+
+
+## Figure 2
+
+### A
+
+```{r, fig.width = (20/2)/2.54, fig.height = (29/3)/2.54}
+local_pal <- c("#525240", "#03878F")
+dropout_res <- readRDS("./local/dropout_res_pbmc10k.rds")
+
+DF <- dropout_res%>% group_by(cell, dropout, type) %>% summarise(Pearson = cor(real, predicted_adt))
+DF$Pearson <- as.numeric(DF$Pearson )
+
+DF$type [!(DF$type == "original")]<- "added_dropout"
+
+pos <- position_jitter(width = 0, height = 0, seed = 6)
+p <- ggplot(DF, aes(x = dropout, y = Pearson, color = type, group = dropout)) +
+  geom_boxplot(show.legend = FALSE,  outlier.size = 0.2) + theme_bw() +
+  #geom_jitter(position=pos, size = 0.8) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_fill_manual(values = local_pal) +
+  ylab("Pearson\n(Real vs ScLinear)") + xlab("") +
+  theme(legend.position = "none") +
+   scale_color_manual(values = c(local_pal)) + scale_fill_manual(values = c(local_pal))  +
+  theme(legend.position = "none") +
+  theme(legend.title = element_blank()) +
+  theme(legend.text = element_text(size = 8)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Pearson") +
+  xlab("Dropout rate") + ggtitle("PBMC10K")
+
+p
+
+if(save_figures){ggsave(plot = p, "local/panels/Final/Main/2/A.PBMC10K_Dropout_boxplot.r1.pdf", width = 20/2, height = 29/3, units = 'cm')}
+```
+### B
+
+```{r, fig.width = (20/2)/2.54, fig.height = (29/3)/2.54}
+local_pal <- c("#525240", "#03878F")
+dropout_res <- readRDS("local/dropout_res_pbmc5k.rds")
+
+
+DF <- dropout_res%>% group_by(cell, dropout, type) %>% summarise(Pearson = cor(real, predicted_adt))
+DF$Pearson <- as.numeric(DF$Pearson )
+
+DF$type [!(DF$type == "original")]<- "added_dropout"
+
+pos <- position_jitter(width = 0, height = 0, seed = 6)
+p <- ggplot(DF, aes(x = dropout, y = Pearson, color = type, group = dropout)) +
+  geom_boxplot(show.legend = FALSE,  outlier.size = 0.2) + theme_bw() +
+  #geom_jitter(position=pos, size = 0.8) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_fill_manual(values = local_pal) +
+  ylab("Pearson\n(Real vs ScLinear)") + xlab("") +
+  theme(legend.position = "none") +
+   scale_color_manual(values = c(local_pal)) + scale_fill_manual(values = c(local_pal))  +
+  theme(legend.position = "none") +
+  theme(legend.title = element_blank()) +
+  theme(legend.text = element_text(size = 8)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Pearson") +
+  xlab("Dropout rate") + ggtitle("PBMC5K")
+
+p
+
+if(save_figures){ggsave(plot = p, "local/panels/Final/Main/2/B.PBMC5K_Dropout_boxplot.r1.pdf", width = 20/2, height = 29/3, units = 'cm')}
+
+```
+
+### C
+
+```{r, fig.width = (20/2)/2.54, fig.height = (29/3)/2.54}
+DF <- readRDS("local/mls_other_species.rds")
+
+DF$tissue <- NA
+DF$tissue[grepl(DF$train_test, pattern = "LymphNode")] <- "Lymph Node"
+DF$tissue[grepl(DF$train_test, pattern = "Spleen")] <- "Spleen"
+
+df <- DF %>% dplyr::select(cell, gene, real, predicted_adt, cell_type_2, train_test, tissue) %>% group_by(gene, train_test, tissue)  %>% summarise(Pearson = cor(real, predicted_adt)) %>% ungroup()
+
+local_pal <- c("#A2A187", "#525240", "#68C6A4", "#03878F")
+df$name <- ""
+pos <- position_jitter(width = 0.3, height = 0, seed = 6)
+ggplot(df, aes(x="", y = Pearson, fill = train_test, label = name)) +
+  geom_boxplot(show.legend = FALSE, outlier.size = 0, outlier.stroke = 0) + 
+  theme_bw() +
+  geom_jitter(position=pos, size = 0.8) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_fill_manual(values = local_pal) +
+  ylab("Pearson\n(Real vs ScLinear)") + xlab("") +
+  theme(legend.position = "none") +
+  geom_label_repel(position = pos,
+                  colour = "black", fill = "white", segment.colour="black",
+                  min.segment.length = 0,
+                  show.legend = TRUE, size = 1.5,
+                  box.padding = 0.25, point.padding = 0) +
+  theme(axis.ticks.x = element_blank(),
+         axis.text.y = element_text(size = 8),
+        panel.spacing = unit(0.05, "lines"),
+        strip.text.x = element_text(size = 8)) +
+  facet_grid(~train_test) +
+  theme(panel.spacing = unit(c(0.1, 0.5, 0.1), "lines"))
+  
+
+if(save_figures){ggsave("./local/panels/Final/Main/2/C.MLS_Pearson_correlation_boxplot_mls_trained.r1.pdf" , width = 20/2, height = 29/3, units = 'cm')}
+```
+
+## Supplementary 1
+
+## A 
+```{r, fig.width = (20/2)/2.54, fig.height = (29/3)/2.54}
+PBMC <- read.table("local/PBMC5K/bit_table_pbmc5k_2.csv", header = T, sep=',')
+PBMC <- PBMC %>% dplyr::select(-c(rna_normalized, rna_raw))
+PBMC <- na.omit(PBMC)
+# deduplicate the separation of complexes that was used for RNA/ADT comparison
+map <- list(  
+    list(gexp = c("HLA-DRA", "HLA-DRB1", "HLA-DRB5"), adt = c("HLA-DR")),
+    list(gexp = c("CD3E", "CD3D", "CD3G"), adt = c("CD3")),
+    list(gexp = c("CD8A", "CD8B"), adt = c("CD8"))
+)
+for (m in map){
+  print(paste0("gexp: ", paste0(m$gexp, collapse = ","), "       adt: ", paste0(m$adt, collapse = ",")))
+  gexp_names <- m$gexp
+  adt_name <- m$adt
+  for(gexp_name in gexp_names){
+    PBMC$gene[PBMC$gene == gexp_name] <- adt_name
+  }
+}
+PBMC <- PBMC %>% distinct()
+
+cors <- PBMC %>% group_by(gene) %>% dplyr::summarise(correlation = cor(real, predicted_sclinear))
+ggplot(cors, aes(x=reorder(gene, correlation), y= correlation,fill=correlation)) + geom_bar(stat="identity", col="black") + coord_flip() +
+    theme_classic2() + scale_fill_gradientn(colours = inferno(11)) + ylab("Pearson\n(Real vs ScLinear)") + xlab("Protein") + theme(legend.position = "none") +
+    ggtitle("PBMC CITE-seq\n(5k cells)") + theme(plot.title = element_text(hjust = 0.5)) +
+    theme( axis.text.y = element_text(size = 8)) 
+
+if(save_figures){ggsave("local/panels/Final/Supplementary/1/A.PBMC5K_Pearson_correlation.r1.pdf" , width = 20/3, height = 29/3, units = 'cm')}
+
+```
+
+### B
+```{r, fig.width = (20/2*2)/2.54, fig.height = (29/3)/2.54}
+PBMC2 <- filter(PBMC, gene %in% c("CD19","CD3","CD14","CD56"))
+ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=cell_type_2)) + geom_point(alpha = 0.8, size=0.5) + facet_wrap(~gene, scales = "free") +
+  scale_color_manual(values = my_pal[5:8]) + theme_classic2() + theme(legend.title = element_blank()) +
+  geom_smooth(method=lm, se=FALSE, col=my_pal[2], alpha = 0.5) + geom_rug() +
+  xlab("ScLinear - Predicted") + ylab("Real")
+
+if(save_figures){ggsave("local/panels/Final/Supplementary/1/B.pbmc5k_Markers.r1.pdf", width = 20/3*2, height = 29/3, units = "cm")}
+
+```
+
+## Reviever Figures
+
+```{r, fig.width = (20/2)/2.54, fig.height = (29/2)/2.54}
+DF <- read.table("local/PBMC/bit_table_pbmc10k_2.csv", header = T, sep=',')
+
+df <- DF %>% na.omit()  %>% group_by(gene, adt_gene_names_real, adt_gene_names_predicted, rna_gene_names_normalized, rna_gene_names_raw)  %>%
+      summarize('scLinear vs ADT' = cor(real, predicted_sclinear, method = "pearson"),
+                'RNA vs ADT' = cor(real, rna_normalized, method = "pearson"))
+df <- df %>%pivot_longer( cols = -c(gene,  adt_gene_names_real, adt_gene_names_predicted, rna_gene_names_normalized, rna_gene_names_raw), values_to = "Pearson", names_to = "Comparison")
+
+df$Comparison <- factor(df$Comparison, levels = rev(sort(unique(df$Comparison))))
+
+df$gene_comp <- paste0(df$gene, "_", df$Comparison)
+local_pal <- c("#68C6A4", "#A2A187")
+df <- df %>% arrange(gene, Comparison)
+## fix the one to many mapping
+df$name <- df$gene
+df <- df %>% mutate(name = ifelse(Comparison == "RNA vs ADT", rna_gene_names_normalized, adt_gene_names_real))
+set.seed(3)
+df$JitteredX <- jitter(rep(0, nrow(df)), amount = 0.2, factor = 1)
+jitter_merge <- df %>% ungroup() %>% dplyr::select(name, Comparison, JitteredX)%>% group_by(name, Comparison) %>% summarise(JitteredX_new = mean(JitteredX))
+df <- df %>% left_join(jitter_merge, by = c("name", "Comparison")) %>% mutate(JitteredX = JitteredX_new) %>% dplyr::select(-c(JitteredX_new)) %>% mutate(name2 = name)
+df$name2[!((df$rna_gene_names_normalized %in% c("CD3", "CD19", "CD14", "CD56")) | (df$adt_gene_names_real %in% c("CD3", "CD19", "CD14", "CD56")))] <- ""
+df_reduced <- df %>% ungroup() %>% dplyr::select(c(name, name2, Comparison, Pearson, JitteredX)) %>% distinct()
+
+pos <- position_nudge(df_reduced$JitteredX)
+pos2 <- position_nudge(df$JitteredX)
+ggplot(df_reduced, aes(x=Comparison, y = Pearson, fill = Comparison, label = name2)) +
+  geom_boxplot(show.legend = FALSE, outlier.stroke = 0, outlier.size = 0) + 
+  theme_bw() +
+  geom_point(position=pos, size = 0.9) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_fill_manual(values = local_pal) +
+  ylab("Pearson") + xlab("") +
+  theme(legend.position = "none") +
+  geom_label_repel(position = pos,
+                  colour = "black", fill = "white", segment.colour="black",
+                  min.segment.length = 1,
+                  show.legend = TRUE, size = 2.5,
+                  box.padding = 0.25, point.padding = 0) +
+  theme(axis.ticks.x = element_blank(),
+         axis.text.y = element_text(size = 8),
+        panel.spacing = unit(0.05, "lines"),
+        strip.text.x = element_text(size = 7)) +
+  geom_line(data = df, aes(x = Comparison, y = Pearson, group = gene),position = pos2, size = 0.25 , color = "darkblue") +
+  ggtitle("PBMC10K")
+
+
+if(save_figures){ggsave("local/panels/Final/Reviewer/1/C.PBMC10K_Pearson_RNA_correlation.r1.pdf", width = 20/2, height = 29/2, units = 'cm')}
+```
+
+### B
+```{r, fig.width = (20/2)/2.54, fig.height = (29/2)/2.54}
+DF <- read.table("local/PBMC5K/bit_table_pbmc5k_2.csv", header = T, sep=',')
+
+df <- DF %>% na.omit()  %>% group_by(gene, adt_gene_names_real, adt_gene_names_predicted, rna_gene_names_normalized, rna_gene_names_raw)  %>%
+      summarize('scLinear vs ADT' = cor(real, predicted_sclinear, method = "pearson"),
+                'RNA vs ADT' = cor(real, rna_normalized, method = "pearson"))
+df <- df %>%pivot_longer( cols = -c(gene,  adt_gene_names_real, adt_gene_names_predicted, rna_gene_names_normalized, rna_gene_names_raw), values_to = "Pearson", names_to = "Comparison")
+
+df$Comparison <- factor(df$Comparison, levels = rev(sort(unique(df$Comparison))))
+df$gene_comp <- paste0(df$gene, "_", df$Comparison)
+
+df <- df %>% mutate(name = ifelse(Comparison == "RNA vs ADT", rna_gene_names_normalized, adt_gene_names_real))
+set.seed(5)
+df$JitteredX <- jitter(rep(0, nrow(df)), amount = 0.2, factor = 1)
+jitter_merge <- df %>% ungroup() %>% dplyr::select(name, Comparison, JitteredX)%>% group_by(name, Comparison) %>% summarise(JitteredX_new = mean(JitteredX))
+df <- df %>% left_join(jitter_merge, by = c("name", "Comparison")) %>% mutate(JitteredX = JitteredX_new) %>% dplyr::select(-c(JitteredX_new)) %>% mutate(name2 = name)
+df$name2[!((df$rna_gene_names_normalized %in% c("CD3", "CD19", "CD14", "CD56")) | (df$adt_gene_names_real %in% c("CD3", "CD19", "CD14", "CD56")))] <- ""
+df_reduced <- df %>% ungroup() %>% dplyr::select(c(name, name2, Comparison, Pearson, JitteredX)) %>% distinct()
+pos <- position_nudge(df_reduced$JitteredX)
+pos2 <- position_nudge(df$JitteredX)
+ggplot(df_reduced, aes(x=Comparison, y = Pearson, fill = Comparison, label = name2)) +
+  geom_boxplot(show.legend = FALSE, outlier.stroke = 0, outlier.size = 0) + 
+  theme_bw() +
+  geom_point(position=pos, size = 0.9) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_fill_manual(values = local_pal) +
+  ylab("Pearson") + xlab("") +
+  theme(legend.position = "none") +
+  geom_label_repel(position = pos,
+                  colour = "black", fill = "white", segment.colour="black",
+                  min.segment.length = 1,
+                  show.legend = TRUE, size = 2.5,
+                  box.padding = 0.25, point.padding = 0) +
+  theme(axis.ticks.x = element_blank(),
+         axis.text.y = element_text(size = 8),
+        panel.spacing = unit(0.05, "lines"),
+        strip.text.x = element_text(size = 7)) +
+  geom_line(data = df, aes(x = Comparison, y = Pearson, group = gene),position = pos2, size = 0.25 , color = "darkblue") +
+  ggtitle("PBMC5K")
+
+
+if(save_figures){ggsave("local/panels/Final/Reviewer/1/B.PBMC5K_Pearson_RNA_correlation.r1.pdf", width = 20/2, height = 29/2, units = 'cm')}
+
+```
+### C
+```{r, fig.width = (20/2)/2.54, fig.height = (29/2)/2.54}
+mls_bit_table <- read.table("local/MouseLymphNodes/bit_table_mls_2.csv", header = T, sep=',')
+mls_bit_table <- na.omit(mls_bit_table)
+
+cors <- mls_bit_table %>% group_by(gene, sample) %>% dplyr::summarise(correlation = cor(real, predicted_sclinear))%>% arrange(desc(correlation)) 
+cors$gene <- factor(cors$gene, levels = unique(cors$gene))
+
+local_pal <- c("#A2A187", "#525240", "#68C6A4", "#03878F")
+cors$name <- ""
+cors$name[cors$gene %in% c("CD3", "CD19", "CD27", "CD11b")] <-  as.vector(cors$gene[cors$gene %in% c("CD3", "CD19", "CD27", "CD11b")])
+pos <- position_jitter(width = 0.3, height = 0, seed = 6)
+ggplot(cors, aes(x="", y = correlation, fill = sample, label = name)) +
+  geom_boxplot(show.legend = FALSE, outlier.stroke = 0, outlier.size = 0) + 
+  theme_bw() +
+  geom_jitter(position=pos, size = 0.8) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_fill_manual(values = local_pal) +
+  ylab("Pearson\n(Real vs ScLinear)") + xlab("") +
+  theme(legend.position = "none") +
+  geom_label_repel(position = pos,
+                  colour = "black", fill = "white", segment.colour="black",
+                  min.segment.length = 0,
+                  show.legend = TRUE, size = 1.5,
+                  box.padding = 0.25, point.padding = 0) +
+  theme(axis.ticks.x = element_blank(),
+         axis.text.y = element_text(size = 8),
+        panel.spacing = unit(0.05, "lines"),
+        strip.text.x = element_text(size = 7)) +
+  facet_grid(~sample)
+if(save_figures){ggsave("local/panels/Final/Reviewer/1/C.MLS_Pearson_correlation_boxplot_mls_cross_species.r1.pdf", width = 20/2, height = 29/2, units = 'cm')}
+
+```

@@ -17,7 +17,7 @@ library(ggplot2)
 library(Seurat)
 library(pals)
 library(patchwork)
-#source("helper_functions.R")
+source("helper_functions.R")
 set.seed(42)
 ```
 
@@ -102,10 +102,15 @@ saveRDS(tonsil, "./../local/Visium/tonsil/tonsil.rds")
 ```{r, fig.width = 15, fig.height = 10}
 tonsil <- readRDS("./../local/Visium/tonsil/tonsil.rds")
 sobj <- tonsil
+
+sobj <- adt_qc(sobj, iso_features = c("mouse-IgG2a", "mouse-IgG1k", "mouse-IgG2bk", "rat-IgG2a"))
+
+
 layout <- c(
   area(t = 0, l = 0, b = 10, r = 2),
   area(t = 0, l = 2, b = 10, r = 15)
 )
+
 p1_nfeatures <- Seurat::SpatialFeaturePlot(sobj, features = "nFeature_RNA", images = "slice1")
 p2_nfeatures <- VlnPlot(sobj, features = c("nFeature_RNA"))
 #p_nfeatures <- patchwork::wrap_plots(p2,p1, design = layout)

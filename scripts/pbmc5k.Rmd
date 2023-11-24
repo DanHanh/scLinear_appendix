@@ -19,6 +19,8 @@ library(ggpubr)
 library(DropletUtils)
 library(Matrix)
 library(grid)
+library(ggrepel)
+source("helper_functions.R")
 # quickly test if py modules can be loaded
 pipe <- create_adt_predictor()
 rm(pipe)
@@ -43,7 +45,7 @@ rownames(x = pbmc5k.data[["Antibody Capture"]]) <- gsub(pattern = "_[control_]*T
                                                            x = rownames(x = pbmc5k.data[["Antibody Capture"]]))
 rownames(x = pbmc5k.data[["Antibody Capture"]]) <- map_names$neurips[ match(rownames(x = pbmc5k.data[["Antibody Capture"]]), map_names$pbmc5k)]
 
-pbmc5k <- Seurat::CreateSeuratObject(counts = pbmc5k.data[["Gene Expression"]], min.cells = 1, min.features = 1)
+pbmc5k <- Seurat::CreateSeuratObject(counts = pbmc5k.data[["Gene Expression"]], min.cells = 10, min.features = 1)
 pbmc5k[["ADT"]] <- Seurat::CreateAssayObject(pbmc5k.data[["Antibody Capture"]][, colnames(x = pbmc5k)])
 Seurat::DefaultAssay(pbmc5k) <- "RNA"
 
@@ -54,49 +56,19 @@ rm(pbmc5k.data, pbmc5k, map_names)
 gc()
 ```
 
+
 ### Preprocess PBMC5K data
 
-```{r}
+```{r, fig.widh = 30, fig.height = 5}
 pbmc5k <- readRDS("./../local/pbmc5k_filtered.rds")
 
-## Mark cells for removal based on the ADT assay. Removed only after RNA based qc and preprocessing!
-adt_counts <- GetAssayData(pbmc5k, slot = "counts", assay = "ADT")
-
-iso_features <- c("IgG1", "IgG2a", "IgG2b")
-all_features <- rownames(pbmc5k@assays$ADT)
-iso_count <- colSums(x = GetAssayData(object = pbmc5k, assay = "ADT", slot = "counts")[iso_features, , drop = FALSE])
-total_counts_ADT <- colSums(x = GetAssayData(object = pbmc5k, assay = "ADT", slot = "counts")[all_features, , drop = FALSE])
-
-qc.stats <- DropletUtils::cleanTagCounts(adt_counts, controls = iso_features) %>% as.data.frame()
-high_control_threshold <- attr(qc.stats$high.controls, "thresholds")
-
-DF <- data.frame(total_counts = total_counts_ADT, iso_counts = iso_count, nFeatures = pbmc5k$nFeature_ADT)
-
-p<-ggplot(DF, aes(x=total_counts_ADT, y=nFeatures, color = iso_count)) + 
-  geom_point(binaxis='y', stackdir='center') + theme_bw() +
-  scale_color_gradient(low = "blue", high = "red", trans = "log10") + 
-  guides(colour = guide_colourbar(barheight = unit(8, "cm")))
-p
-
-DF2 <- DF %>% pivot_longer(!nFeatures, values_to = "counts", names_to = "names")
-p <- ggplot(DF2, aes(x = counts, fill = names)) + geom_histogram() +
-  theme_bw() +
-  scale_fill_manual(values = kelly()[3:length(kelly())]) +
-  facet_wrap(~names , ncol = 1, scales = "free") +
-  geom_vline(aes(xintercept = xintercept, color = Lines), data.frame(xintercept = high_control_threshold["higher"], Lines = "upper_iso_count_threshold") , linetype = "dashed")
-p
-
-## Mark the cells that should be filtered based on adt values (removed after RNA based pre-processing!)
-pbmc5k@meta.data$adt_filter <- (qc.stats$discard) 
-
-
-
+pbmc5k <- adt_qc(pbmc5k, iso_features = c("IgG1", "IgG2a", "IgG2b"))
 
 ## Perform basc preprocessing steps including: lognormalization, removal of doublets, removal of low quality cells, clustering, cell-type annotation
 pbmc5k <- scLinear::prepare_data(pbmc5k,
                                    remove_doublets = TRUE,
                                    low_qc_cell_removal = TRUE,
-                                   anno_level = c(2,3),
+                                   anno_level = c(1,2,3,4),
                                    samples = NULL,
                                    integrate_data = FALSE,
                                    remove_empty_droplets = FALSE,
@@ -105,21 +77,29 @@ pbmc5k <- scLinear::prepare_data(pbmc5k,
                                    resolution = 0.8,
                                    seed = 42)
 
-
-
-
 ##  remove adt based filtered cells 
-# remove cells than have less than 50 
-pbmc5k@meta.data$adt_filter  <- (pbmc5k@meta.data$adt_filter | pbmc5k@meta.data$nFeature_ADT < max(pbmc5k@meta.data$nFeature_ADT)/2)
 print("Number of cells filtered based on ADT data")
 table(pbmc5k@meta.data$adt_filter )
 pbmc5k <- subset(pbmc5k, subset = adt_filter == FALSE)
+
 ## Normalize ADT data
 pbmc5k <- Seurat::NormalizeData(pbmc5k, normalization.method = "CLR", margin = 2, assay = "ADT")
+
+DimPlot(pbmc5k, group.by = "seurat_clusters")
+DimPlot(pbmc5k, group.by = "cell_type_2")
+DimPlot(pbmc5k, group.by = "seurat_clusters", cells = colnames(pbmc5k)[pbmc5k@meta.data$cell_type_2 == "Unassigned"]
+)
+VlnPlot(pbmc5k, group.by = "cell_type_2", features = "nFeature_RNA")
+
+pbmc5k <- subset(pbmc5k, subset = seurat_clusters != "12")
+DimPlot(pbmc5k, group.by = "cell_type_2")
+
 saveRDS(pbmc5k, "./../local/PBMC5K_prepared2.rds")
-rm(pbmc5k,all_features, high_control_threshold, iso_count, iso_features, total_counts_ADT, qc.stats, p, adt_counts, DF, DF2, n_adt_filter)
+rm(pbmc5k)
 gc()
 ```
+
+
 
 ### UMAP
 
@@ -154,7 +134,7 @@ gc()
 ```
 
 
-### bit table (RNA / protein predicted vs protein real) (take 2)
+### bit table (RNA / protein predicted vs protein real)
 
 ```{r}
 pbmc5k <- readRDS("./../local/PBMC5K_predicted.rds")
@@ -172,8 +152,17 @@ rna_raw <- rna_raw %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_
 #### add normalized RNA (normalized the same way as used for prediction)
 rna_normalized <- as.matrix(scLinear::gexp_normalize(pbmc5k@assays[["RNA"]]@counts))
 rna_normalized <- rna_normalized %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "rna_normalized")
-#### post processing of RNA data to make it comparable to ADT data
 
+adt_real$adt_gene_names_real <- adt_real$gene
+
+adt_predicted_sclinear$adt_gene_names_predicted <- adt_predicted_sclinear$gene
+
+rna_raw$rna_gene_names_raw <- rna_raw$gene
+
+rna_normalized$rna_gene_names_normalized <- rna_normalized$gene
+
+
+#### post processing of RNA data to make it comparable to ADT data
 map <- list(
     list(gexp = c("ITGAM"), adt = c("CD11b")),
     list(gexp = c("FUT4"), adt = c("CD15")),
@@ -336,11 +325,12 @@ dev.off()
 ##### Boxplots
 ```{r, fig.width= 20/2, fig.height = 29/2}
 DF <- read.table("./../local/PBMC5K/bit_table_pbmc5k_2.csv", header = T, sep=',')
-df <- DF %>% na.omit()  %>% group_by(gene)  %>%
+df <- DF %>% na.omit()  %>% group_by(gene, adt_gene_names_real, adt_gene_names_predicted, rna_gene_names_normalized, rna_gene_names_raw)  %>%
       summarize('scLinear vs ADT' = cor(real, predicted_sclinear, method = "pearson"),
                 'RNA vs ADT' = cor(real, rna_normalized, method = "pearson"))
 
-df <- df %>%pivot_longer(!gene, values_to = "Pearson", names_to = "Comparison")
+df <- df %>%pivot_longer( cols = -c(gene,  adt_gene_names_real, adt_gene_names_predicted, rna_gene_names_normalized, rna_gene_names_raw), values_to = "Pearson", names_to = "Comparison")
+
 df$Comparison <- factor(df$Comparison, levels = rev(sort(unique(df$Comparison))))
 
 df$gene_comp <- paste0(df$gene, "_", df$Comparison)
@@ -349,9 +339,23 @@ df$gene_comp <- paste0(df$gene, "_", df$Comparison)
 my_pal <- c("#68C6A4", "#A2A187")
 df <- df %>% arrange(gene, Comparison)
 df$name <- df$gene
-df$name[!(df$gene %in% c("CD3", "CD19", "CD14", "CD56"))] <- ""
-pos <- position_jitter(width = 0.2, height = 0, seed = 3)
-ggplot(df, aes(x=Comparison, y = Pearson, fill = Comparison, label = name)) +
+
+
+
+df <- df %>% mutate(name = ifelse(Comparison == "RNA vs ADT", rna_gene_names_normalized, adt_gene_names_real))
+
+df$JitteredX <- jitter(rep(0, nrow(df)), amount = 0.2, factor = 1)
+
+jitter_merge <- df %>% ungroup() %>% dplyr::select(name, Comparison, JitteredX)%>% group_by(name, Comparison) %>% summarise(JitteredX_new = mean(JitteredX))
+
+df <- df %>% left_join(jitter_merge, by = c("name", "Comparison")) %>% mutate(JitteredX = JitteredX_new) %>% dplyr::select(-c(JitteredX_new)) %>% mutate(name2 = name)
+df$name2[!((df$rna_gene_names_normalized %in% c("CD3", "CD19", "CD14", "CD56")) | (df$adt_gene_names_real %in% c("CD3", "CD19", "CD14", "CD56")))] <- ""
+
+df_reduced <- df %>% ungroup() %>% dplyr::select(c(name, name2, Comparison, Pearson, JitteredX)) %>% distinct()
+
+pos <- position_nudge(df_reduced$JitteredX)
+pos2 <- position_nudge(df$JitteredX)
+ggplot(df_reduced, aes(x=Comparison, y = Pearson, fill = Comparison, label = name2)) +
   geom_boxplot(show.legend = FALSE) + 
   theme_bw() +
   geom_point(position=pos, size = 0.9) +
@@ -368,9 +372,20 @@ ggplot(df, aes(x=Comparison, y = Pearson, fill = Comparison, label = name)) +
          axis.text.y = element_text(size = 8),
         panel.spacing = unit(0.05, "lines"),
         strip.text.x = element_text(size = 7)) +
-  geom_line(aes(group = gene), position = pos, size = 0.25 , color = "darkblue") 
+  geom_line(data = df, aes(x = Comparison, y = Pearson, group = gene),position = pos2, size = 0.25 , color = "darkblue") 
 
-ggsave("./../local/panels/Final/Main/1/C.PBMC5K_Pearson_RNA_correlation.v2.pdf", width = 20/2, height = 29/2, units = 'cm')
+
+
+
+
+
+#ggsave("./../local/panels/Final/Main/1/C.PBMC5K_Pearson_RNA_correlation.v2.pdf", width = 20/2, height = 29/2, units = 'cm')
+
+
+
+
+
+
 ```
 
 #### Pearson correlation by gene
@@ -393,10 +408,7 @@ for (m in map){
     PBMC$gene[PBMC$gene == gexp_name] <- adt_name
   }
 }
-
 PBMC <- PBMC %>% distinct()
-
-## clean up to get 
 
 cors <- PBMC %>% group_by(gene) %>% dplyr::summarise(correlation = cor(real, predicted_sclinear))
 ggplot(cors, aes(x=reorder(gene, correlation), y= correlation,fill=correlation)) + geom_bar(stat="identity", col="black") + coord_flip() +
@@ -501,8 +513,6 @@ saveRDS(dropout_data_list, "./../local/pbmc5k_dropout_list.rds")
 
 
 ### predict PBMC5K with scLinear for drop out
-
-
 ```{r}
 get_dropout_rate <- function(object){
   df <- GetAssayData(object, assay = "RNA",  slot = "counts")
@@ -596,7 +606,7 @@ p <- ggplot(DF, aes(x = dropout, y = Pearson, color = type, group = dropout)) +
 
 p
 
-ggsave(plot = p, "./../local/panels/Final/Main/2/B.PBMC5K_Dropout_boxplot.r1.pdf", width = 20/2, height = 29/3, units = 'cm')
+#ggsave(plot = p, "./../local/panels/Final/Main/2/B.PBMC5K_Dropout_boxplot.r1.pdf", width = 20/2, height = 29/3, units = 'cm')
 ```
 
 

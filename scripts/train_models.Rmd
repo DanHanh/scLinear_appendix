@@ -83,7 +83,7 @@ saveRDS(sobj_test, "./../local/NeurIPS/neurips_test.rds")
 
 ### Analyse some NeurIPS data
 
-```{r}
+```{r, fig.height = 20}
 sobj_test <- readRDS("./../local/NeurIPS/neurips_test.rds")
 
 ## load pretrained predictor model scLinear
@@ -99,10 +99,9 @@ adt_predicted_sclinear <- as.matrix(sobj_test@assays[["predicted_adt_sclinear"]]
 adt_predicted_sclinear <- adt_predicted_sclinear %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "predicted_sclinear")
 
 
-
 meta <- sobj_test@meta.data %>% rownames_to_column("cell")
 ## add borad cell types
-
+{
 meta$broad_cell_type <- NA
 meta$broad_cell_type[meta$cell_type %in% c('CD4+ T naive', 'CD4+ T activated', 'CD4+ T activated integrinB7+', 'MAIT', 'CD8+ T naive', 'T reg', 'CD8+ T CD49f+', 'CD8+ T CD57+ CD45RA+', 'CD8+ T CD69+ CD45RO+', 'CD8+ T TIGIT+ CD45RA+', 'CD8+ T CD69+ CD45RA+', 'CD8+ T TIGIT+ CD45RO+', 'gdT TCRVD2+', 'CD4+ T CD314+ CD45RA+', 'CD8+ T naive CD127+ CD26- CD101-', 'gdT CD158b+', 'CD8+ T CD57+ CD45RO+', 'dnT', 'T prog cycling')] <- "T"
 
@@ -119,36 +118,84 @@ meta$broad_cell_type[meta$cell_type %in% c('Proerythroblast', 'Erythroblast', 'N
 
 meta$broad_cell_type[meta$cell_type %in% c('ILC', 'MK/E prog', 'HSC', 'Lymph prog', 'G/M prog')] <- "Progenitors"
 
-
-#Naive CD20+ B IGKC+
-
-
-
 unique(meta$cell_type[ is.na(meta$broad_cell_type)])
 
+}
+
+table(meta$broad_cell_type, useNA = "ifany")
+
+DF <- adt_real %>% full_join(adt_predicted_sclinear, by = c("gene", "cell")) %>% full_join(meta, by = c("cell"))
+
+#######
+PBMC <- DF
+#PBMC <- na.omit(PBMC)
+
+cors <- PBMC %>% group_by(gene) %>% dplyr::summarise(correlation = cor(real, predicted_sclinear))
+ggplot(cors, aes(x=reorder(gene, correlation), y= correlation,fill=correlation)) + geom_bar(stat="identity", col="black") + coord_flip() +
+    theme_classic2() + scale_fill_gradientn(colours = inferno(11)) + ylab("Pearson\n(Real vs ScLinear)") + xlab("Protein") + theme(legend.position = "none") +
+    ggtitle("Neurips CITE-seq\n(n cells)") + theme(plot.title = element_text(hjust = 0.5)) +
+    theme( axis.text.y = element_text(size = 8)) + ylim(c(NA,1))
+
+
+ggsave("./../local/neurips.pearson.pdf", height = 35, width =20, units = "cm", device = "pdf" )
 
 
 
-
-
-DF <- adt_real %>% full_join(adt_predicted_sclinear, by = c("gene", "cell"))  %>%  full_join(meta, by = c("cell"))
-
-DF <- DF %>% arrange(gene)
-
-DF$gene <- factor(DF$gene, levels = unique(DF$gene))
-
-
-
-sobj_test
-
-
-eval_res <- evaluate_predictor(pipe, sobj_test@assays$RNA, sobj_test@assays$ADT, normalize_gex = FALSE, normalize_adt = FALSE, slot = "data")
-
-pbmc10k[["predicted_adt_sclinear"]] <- assay_predicted
-
-# saveRDS(pbmc10k, "./../local/PBMC10K_predicted.rds")
-# rm(assay_predicted, eval_res,pipe, pbmc10k)
-# gc()
+# 
+# 
+# 
+# 
+# 
+# 
+# #Naive CD20+ B IGKC+
+# 
+# 
+# 
+# unique(meta$cell_type[ is.na(meta$broad_cell_type)])
+# 
+# 
+# 
+# 
+# 
+# 
+# DF <- adt_real %>% full_join(adt_predicted_sclinear, by = c("gene", "cell"))  %>%  full_join(meta, by = c("cell"))
+# 
+# DF <- DF %>% arrange(gene)
+# 
+# DF$gene <- factor(DF$gene, levels = unique(DF$gene))
+# 
+# 
+# 
+# sobj_test
+# 
+# 
+# eval_res <- evaluate_predictor(pipe, sobj_test@assays$RNA, sobj_test@assays$ADT, normalize_gex = FALSE, normalize_adt = FALSE, slot = "data")
+# 
+# pbmc10k[["predicted_adt_sclinear"]] <- assay_predicted
+# 
+# # saveRDS(pbmc10k, "./../local/PBMC10K_predicted.rds")
+# # rm(assay_predicted, eval_res,pipe, pbmc10k)
+# # gc()
 
 ```
 
+```{r}
+my_pal <- c("#E7E7E0","#A2A187", "#525240", "#03878F", "#F2B531","#ED5958","#68C6A4", "#113245")
+PBMC2 <- filter(PBMC, gene %in% c("CD19","CD3","CD14","CD56"))
+ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=cell_type)) + geom_point(alpha = 0.8, size=0.5) + facet_wrap(~gene, scales = "free") +
+  #scale_color_manual(values = my_pal[5:8]) +
+  theme_classic2() + theme(legend.title = element_blank()) +
+  geom_smooth(method=lm, se=FALSE, col=my_pal[2], alpha = 0.5) + geom_rug() +
+  xlab("ScLinear - Predicted") + ylab("Real")
+
+
+PBMC2 <- filter(PBMC, gene %in% c("CD19","CD3","CD14","CD56"))
+ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=broad_cell_type)) + geom_point(alpha = 0.8, size=0.5) + facet_wrap(~gene, scales = "free") +
+  #scale_color_manual(values = my_pal[5:8]) +
+  theme_classic2() + theme(legend.title = element_blank()) +
+  geom_smooth(method=lm, se=FALSE, col=my_pal[2], alpha = 0.5) + geom_rug() +
+  xlab("ScLinear - Predicted") + ylab("Real")
+
+
+
+```

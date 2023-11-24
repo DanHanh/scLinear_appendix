@@ -17,7 +17,10 @@ library(Metrics)
 library(pals)
 library(ggpubr)
 library(DropletUtils)
+library(Matrix)
+library(grid)
 library(ggrepel)
+source("helper_functions.R")
 # quickly test if py modules can be loaded
 pipe <- create_adt_predictor()
 rm(pipe)
@@ -68,7 +71,7 @@ for(n in names(mls.data)){
   rownames(x = tmp[["Antibody Capture"]]) <- map_names$neurips[ match(rownames(x = tmp[["Antibody Capture"]]), map_names$mouse)]
   
   # min features set to 0, to model empty droplet removal correctly
-  mls <- Seurat::CreateSeuratObject(counts = tmp[["Gene Expression"]], min.cells = 1, min.features = 1)
+  mls <- Seurat::CreateSeuratObject(counts = tmp[["Gene Expression"]], min.cells = 10, min.features = 1)
   mls[["ADT"]] <- Seurat::CreateAssayObject(tmp[["Antibody Capture"]][, colnames(x = mls)])
   Seurat::DefaultAssay(mls) <- "RNA"
   mls$mito_percent <- Seurat::PercentageFeatureSet(object = mls, pattern = "^mt-")
@@ -92,38 +95,9 @@ mls_list <- readRDS("./../local/mls1.rds")
 
 for(n in names(mls_list)){
   print(paste0("Sample : ", n))
+  
   mls <- mls_list[[n]]
-  ## Mark cells for removal based on the ADT assay. Removed only after RNA based qc and preprocessing!
-  adt_counts <- GetAssayData(mls, slot = "counts", assay = "ADT")
-  
-  iso_features <- c("Isotype-G0114F7", "Isotype-HTK888", "Isotype-MOPC.173", "Isotype-MOPC.21", "Isotype-MPC.11", "Isotype-RTK2071", "Isotype-RTK2758", "Isotype-RTK4174", "Isotype-RTK4530")
-  all_features <- rownames(mls@assays$ADT)
-  iso_count <- colSums(x = GetAssayData(object = mls, assay = "ADT", slot = "counts")[iso_features, , drop = FALSE])
-  total_counts_ADT <- colSums(x = GetAssayData(object = mls, assay = "ADT", slot = "counts")[all_features, , drop = FALSE])
-  
-  qc.stats <- DropletUtils::cleanTagCounts(adt_counts, controls = iso_features) %>% as.data.frame()
-  high_control_threshold <- attr(qc.stats$high.controls, "thresholds")
-  
-  
-  DF <- data.frame(total_counts = total_counts_ADT, iso_counts = iso_count, nFeatures = mls$nFeature_ADT)
-  
-  p<-ggplot(DF, aes(x=total_counts_ADT, y=nFeatures, color = iso_count)) + 
-    geom_point(binaxis='y', stackdir='center') + theme_bw() +
-    scale_color_gradient(low = "blue", high = "red", trans = "log10") + 
-    guides(colour = guide_colourbar(barheight = unit(8, "cm")))
-  print(p)
-  
-  DF2 <- DF %>% pivot_longer(!nFeatures, values_to = "counts", names_to = "names")
-  p <- ggplot(DF2, aes(x = counts, fill = names)) + geom_histogram() +
-    theme_bw() +
-    scale_fill_manual(values = kelly()[3:length(kelly())]) +
-    facet_wrap(~names , ncol = 1, scales = "free") +
-    geom_vline(aes(xintercept = xintercept, color = Lines), data.frame(xintercept = high_control_threshold["higher"], Lines = "upper_iso_count_threshold") , linetype = "dashed")
-  print(p)
-  
-  ## Mark the cells that should be filtered based on adt values (removed after RNA based pre-processing!)
-  mls@meta.data$adt_filter <- (qc.stats$discard) 
-  
+  mls <- adt_qc(mls, iso_features = c("Isotype-G0114F7", "Isotype-HTK888", "Isotype-MOPC.173", "Isotype-MOPC.21", "Isotype-MPC.11", "Isotype-RTK2071", "Isotype-RTK2758", "Isotype-RTK4174", "Isotype-RTK4530"))
   mls_list[[n]] <- mls
 }
 
@@ -139,14 +113,13 @@ mls <- scLinear::prepare_data(mls,
                             integrate_data = TRUE,
                             remove_empty_droplets = FALSE,
                             annotation_selfCluster = TRUE,
-                            resolution = 0.4,
+                            resolution = 0.8,
                             seed = 42,
                             species = "Mm")
   
 
 ##  remove adt based filtered cells 
 # remove cells than have less than 50% percent of nFeatures_adt
-mls@meta.data$adt_filter  <- (mls@meta.data$adt_filter | mls@meta.data$nFeature_ADT < max(mls@meta.data$nFeature_ADT)/2)
 print("Number of cells filtered based on ADT data")
 table(mls@meta.data$adt_filter )
 mls <- subset(mls, subset = adt_filter == FALSE)
@@ -159,12 +132,23 @@ DimPlot(mls, group.by = "sample", pt.size = 0.05)
 DimPlot(mls, group.by = "cell_type_2", pt.size = 0.05)
 
 
+DimPlot(mls, group.by = "seurat_clusters", cells = colnames(mls)[mls@meta.data$cell_type_2 == "Unassigned"]
+)
+Seurat::Idents(mls) <- mls@meta.data$cell_type_2
+Seurat::DotPlot(mls, assay = "ADT", features = c("CD3", "CD4", "CD19", "CD11b"))
+
+## unassigned label clearly belongs to the T-cell cluster
+
+mls@meta.data$cell_type_2[(mls@meta.data$cell_type_2 == "Unassigned")] <- "T"
+DimPlot(mls, group.by = "cell_type_2", pt.size = 0.05)
+
 saveRDS(mls, "./../local/mls_prepared2.rds")
 rm(mls,all_features, high_control_threshold, iso_count, iso_features, total_counts_ADT, qc.stats, p, adt_counts, DF, DF2)
 gc()
 
 
 ```
+
 
 ### UMAP
 
@@ -175,18 +159,6 @@ p <- DimPlot(mls, group.by = "cell_type_2", pt.size = 0.05) + ggtitle("Cell type
   scale_color_manual(values = c("#BE0032","#008856","#0067A5", "#F3C300", "#69009c")) + theme_bw()
 p
 DimPlot(mls, group.by = "seurat_clusters", pt.size = 0.05)
-
-
-## because there are clearly distinct clusters annotated to the same cell type, The specific markers for each cluster are calculated.
-
-# Seurat::Idents(mls) <- mls$seurat_clusters
-# 
-# cluster_markers <- Seurat::FindAllMarkers(mls)
-# 
-# a <- cluster_markers %>% dplyr::filter(p_val_adj < 0.05) %>%  group_by(cluster) %>% slice_min(order_by = p_val_adj - abs(avg_log2FC), n = 3, with_ties = FALSE)
-# 
-# saveRDS(cluster_markers, "./../local/mls_cluster_markers.rds")
-
 
 ggsave(filename = "./../local/umap_mls.pdf", plot = p, width = 9, height = 6, units = "cm")
 rm(p, mls)
@@ -390,17 +362,17 @@ mls_list <- Seurat::SplitObject(mls, split.by = "sample")
 # train vs test LymphNode
 train_set <- mls_list$LymphNode1
 test_set <- mls_list$LymphNode2
-LymphNode1_vs_LymphNode2 <- get_bit_table(train_set, test_set) %>% mutate(train_test = "LymphNode1_vs_LymphNode2")
+LymphNode1_vs_LymphNode2 <- get_bit_table(train_set, test_set) %>% mutate(train_test = "LymphNode2")
 train_set <- mls_list$LymphNode2
 test_set <- mls_list$LymphNode1
-LymphNode2_vs_LymphNode1 <- get_bit_table(train_set, test_set) %>% mutate(train_test = "LymphNode2_vs_LymphNode1")
+LymphNode2_vs_LymphNode1 <- get_bit_table(train_set, test_set) %>% mutate(train_test = "LymphNode1")
 # train vs test Spleen
 train_set <- mls_list$Spleen1
 test_set <- mls_list$Spleen2
-Spleen1_vs_Spleen2 <- get_bit_table(train_set, test_set) %>% mutate(train_test = "Spleen1_vs_Spleen2")
+Spleen1_vs_Spleen2 <- get_bit_table(train_set, test_set) %>% mutate(train_test = "Spleen2")
 train_set <- mls_list$Spleen2
 test_set <- mls_list$Spleen1
-Spleen2_vs_Spleen1 <- get_bit_table(train_set, test_set) %>% mutate(train_test = "Spleen2_vs_Spleen1")
+Spleen2_vs_Spleen1 <- get_bit_table(train_set, test_set) %>% mutate(train_test = "Spleen1")
 
 
 
@@ -445,88 +417,6 @@ ggplot(df, aes(x="", y = Pearson, fill = train_test, label = name)) +
 
 
 
-ggsave("./../local/panels/Final/Main/2/A.MLS_Pearson_correlation_boxplot_mls_trained.r1.pdf" , width = 20/2, height = 29/3, units = 'cm')
-
-
-
-
-
-
-pipe <- create_adt_predictor()
-
-pipe <- fit_predictor(pipe = pipe,
- gexp_train = train_set@assays[["RNA"]],
-              adt_train = train_set@assays[["ADT"]],
-              normalize_gex = TRUE,
-              normalize_adt = TRUE)
-
-eval_res <- evaluate_predictor(pipe, test_set@assays$RNA, test_set@assays$ADT, normalize_gex = TRUE, normalize_adt = TRUE)
-
-predicted_assay <- adt_predict(pipe = pipe, gexp = test_set@assays[["RNA"]], normalize = TRUE)
-test_set[["predicted_adt"]] <- predicted_assay
-
-adt_real <- as.matrix(test_set@assays[["ADT"]]@data)
-adt_real <- adt_real %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "real")
-adt_predicted_sclinear <- as.matrix(test_set@assays[["predicted_adt"]]@data)
-adt_predicted_sclinear <- adt_predicted_sclinear %>% as.data.frame() %>% rownames_to_column("gene") %>% pivot_longer(!gene,names_to = "cell", values_to = "prediced_adt")
-
-
-meta <- test_set@meta.data %>% rownames_to_column("cell")
-
-DF <- adt_real %>% full_join(adt_predicted_sclinear, by = c("gene", "cell")) %>% full_join(meta, by = c("cell"))
-
-
-
-
-
-df <- DF %>% na.omit()  %>% group_by(gene)  %>%
-      summarize('scLinear vs ADT' = cor(real, predicted_adt, method = "pearson"))
-
-df <- df %>%pivot_longer(!gene, values_to = "Pearson", names_to = "Comparison")
-df$Comparison <- factor(df$Comparison, levels = rev(sort(unique(df$Comparison))))
-
-df$gene_comp <- paste0(df$gene, "_", df$Comparison)
-
-
-my_pal <- c("#68C6A4", "#A2A187")
-df <- df %>% arrange(gene, Comparison)
-df$name <- df$gene
-df$name[!(df$gene %in% c("CD11b", "CD19","CD3", "CD27"))] <- ""
-pos <- position_jitter(width = 0.2, height = 0, seed = 3)
-ggplot(df, aes(x=Comparison, y = Pearson, fill = Comparison, label = name)) +
-  geom_boxplot(show.legend = FALSE) + 
-  theme_bw() +
-  geom_point(position=pos, size = 0.9) +
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-  scale_fill_manual(values = my_pal) +
-  ylab("Pearson") + xlab("") +
-  theme(legend.position = "none") +
-  geom_label_repel(position = pos,
-                  colour = "black", fill = "white", segment.colour="black",
-                  min.segment.length = 1,
-                  show.legend = TRUE, size = 1.5,
-                  box.padding = 0.25, point.padding = 0) +
-  theme(axis.ticks.x = element_blank(),
-         axis.text.y = element_text(size = 8),
-        panel.spacing = unit(0.05, "lines"),
-        strip.text.x = element_text(size = 7)) +
-  geom_line(aes(group = gene), position = pos, size = 0.25 , color = "darkblue") 
-
-
-
-PBMC <- DF
-PBMC <- na.omit(PBMC)
-
-PBMC <- PBMC %>% distinct()
-
-## clean up to get 
-
-cors <- PBMC %>% group_by(gene) %>% dplyr::summarise(correlation = cor(real, predicted_adt))
-ggplot(cors, aes(x=reorder(gene, correlation), y= correlation,fill=correlation)) + geom_bar(stat="identity", col="black") + coord_flip() +
-    theme_classic2() + scale_fill_gradientn(colours = inferno(11)) + ylab("Pearson\n(Real vs ScLinear)") + xlab("Protein") + theme(legend.position = "none") +
-    ggtitle("PBMC CITE-seq\n(5k cells)") + theme(plot.title = element_text(hjust = 0.5)) +
-    theme( axis.text.y = element_text(size = 8)) 
-
-
+#ggsave("./../local/panels/Final/Main/2/A.MLS_Pearson_correlation_boxplot_mls_trained.r1.pdf" , width = 20/2, height = 29/3, units = 'cm')
 ```
 
