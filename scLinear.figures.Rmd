@@ -45,9 +45,9 @@ if(save_figures){
 
 ```
 
-## Figure 1
 
-### B
+
+### Figure 1 b
 
 ```{r, fig.width = (20/3)/2.54, fig.height = (29/4)/2.54}
 Competition_df <- read.table("data/NeurIPS_results.csv", header = T, sep = ",")
@@ -72,10 +72,16 @@ ggplot(df, aes(x=Rank, y=RMSE, col=Category)) + geom_point(size=2) + theme_class
   geom_label_repel(nudge_y = 0.05,label = ifelse(!is.na(df$Category), as.character(df$Category),"")) +
   ylim(0.3,0.55)
 
-if(save_figures){ggsave("local/panels/Final/Main/1/B.Neurips.RMSE.r1.pdf", width = 20/3, height = 29/4, units = 'cm')}
+if(save_figures){
+  ggsave("local/panels/Final/Main/1/Figure.1.b.r2.pdf", width = 20/3, height = 29/4, units = 'cm')
+  write.table(df, "data/Figure.1.b.csv", sep = ",", col.names = TRUE, row.names = FALSE)
+  
+  
+  
+  }
 ```
 
-### C
+### Figure 1 c
 ```{r, fig.width = (20/3)/2.54, fig.height = (29/4)/2.54}
 my_data <- read_excel("local/time-memory2.xls",sheet = 2, )
 scLinear <- melt(as.data.frame(my_data), id.vars = "time")
@@ -95,12 +101,16 @@ Time_sum$Method <- factor(Time_sum$Method, levels = c("Babel_Dance","KRR_new","V
 ggplot(Time_sum, aes(x=Method, y=Mean, fill=Method)) + geom_bar(stat="identity") + theme_classic2() +
   scale_fill_manual(values = my_pal) + theme(legend.position = "none") + ylab("Time (sec)") +
   theme(axis.text.x = element_text(angle = 90)) +
-  geom_errorbar( aes(x=Method, ymin=Mean-Sd, ymax=Mean+Sd), width=0.2, colour="black", alpha=0.5)
+  geom_errorbar( aes(x=Method, ymin=Mean-Sd, ymax=Mean+Sd), width=0.2, colour="black", alpha=0.8) + 
+  geom_point(data = Time, aes(x=Method, y=time), size = 0.8)
   
-if(save_figures){ggsave("local/panels/Final/Main/1/C.Time.r1.pdf", width = 20/3, height = 29/4, units = 'cm')}
+if(save_figures){ggsave("local/panels/Final/Main/1/Figure.1.c.r2.pdf", width = 20/3, height = 29/4, units = 'cm')
+  write.table(Time_sum, "data/Figure.1.c.csv", sep = ",", col.names = TRUE, row.names = FALSE)
+  
+  }
 ```
 
-### D
+### Figure 1 d
 ```{r, fig.width = (20/3)/2.54, fig.height = (29/4)/2.54}
 RAM <- Time_RAM %>% group_by(Method,Seed) %>% dplyr::summarise(RAM = median(value))
 RAM_sum <- RAM %>% group_by(Method) %>% dplyr::summarise(Mean = mean(RAM), Sd = sd(RAM))
@@ -108,12 +118,16 @@ RAM_sum$Method <- factor(RAM_sum$Method, levels = c("Babel_Dance","KRR_new","Van
 ggplot(RAM_sum, aes(x=Method, y=Mean, fill=Method)) + geom_bar(stat="identity") + theme_classic2() +
   scale_fill_manual(values = my_pal) + theme(legend.position = "none") + ylab("RAM (MB)") +
   theme(axis.text.x = element_text(angle = 90)) +
-  geom_errorbar( aes(x=Method, ymin=Mean-Sd, ymax=Mean+Sd), width=0.2, colour="black", alpha=0.5)
+  geom_errorbar( aes(x=Method, ymin=Mean-Sd, ymax=Mean+Sd), width=0.2, colour="black", alpha=0.8) + 
+  geom_point(data = RAM, aes(x=Method, y=RAM),size = 0.8)
   
-if(save_figures){ggsave("local/panels/Final/Main/1/D.RAM.r1.pdf", width = 20/3, height = 29/4, units = 'cm')}
+if(save_figures){ggsave("local/panels/Final/Main/1/Figure.1.d.r2.pdf", width = 20/3, height = 29/4, units = 'cm')
+    write.table(RAM_sum, "data/Figure.1.d.csv", sep = ",", col.names = TRUE, row.names = FALSE)
+  
+  }
 ```
 
-### E
+### Figure 2 a
 ```{r, fig.width = (20/3)/2.54, fig.height = (29/3)/2.54,}
 PBMC <- read.table("./local/PBMC/bit_table_pbmc10k_2.csv", header = T, sep=',')
 PBMC <- PBMC %>% dplyr::select(-c(rna_normalized, rna_raw))
@@ -140,20 +154,23 @@ ggplot(cors, aes(x=reorder(gene, correlation), y= correlation,fill=correlation))
     theme_classic2() + scale_fill_gradientn(colours = inferno(11)) + ylab("Pearson\n(Real vs ScLinear)") + xlab("Protein") + theme(legend.position = "none") +
   ggtitle("PBMC CITE-seq\n(10k cells)") + theme(plot.title = element_text(hjust = 0.5))
 
-if(save_figures){ggsave("local/panels/Final/Main/1/E.PBMC10K.Pearson.r1.pdf", width = 20/3, height = 29/3, units = 'cm')}
+if(save_figures){ggsave("local/panels/Final/Main/1/Figure.2.a.r2.pdf", width = 20/3, height = 29/3, units = 'cm')
+   write.table(cors, "data/Figure.2.a.csv", sep = ",", col.names = TRUE, row.names = FALSE)
+  }
+
 ```
-### F
+### Figure 2 b
 ```{r, fig.width = (20/3*2)/2.54, fig.height = (29/3)/2.54,}
 PBMC2 <- filter(PBMC, gene %in% c("CD19","CD3","CD14","CD56"))
 ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=cell_type_2)) + geom_point(alpha = 0.8, size=0.5) + facet_wrap(~gene, scales = "free") +
   scale_color_manual(values = my_pal[5:8]) + theme_classic2() + theme(legend.title = element_blank()) +
   geom_smooth(method=lm, se=FALSE, col=my_pal[2], alpha = 0.5) + geom_rug() +
   xlab("ScLinear - Predicted") + ylab("Real")
-if(save_figures){ggsave("local/panels/Final/Main/1/F.PBMC10K.Markers.r1.pdf", width = 20/3*2, height = 29/3, units = "cm")}
+if(save_figures){ggsave("local/panels/Final/Main/1/Figure.2.b.r2.pdf", width = 20/3*2, height = 29/3, units = "cm")
+  write.table(PBMC2, "data/Figure.2.b.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 ```
-## Figure 3
 
-### A
+### Figure 3 a
 ```{r, fig.width = (20/3)/2.54, fig.height = (29/3)/2.54,}
 sobj <- readRDS("local/Visium/visium_10xGenomics_predicted(withNeurIPS).rds")
 
@@ -169,13 +186,16 @@ hires@assay = lowres@assay
 hires@key = lowres@key
 sobj@images$hires = hires
 
-SpatialDimPlot(sobj, group.by = "scMRMA_level_2_2",images = "hires", pt.size.factor = 6) + scale_fill_manual(values = my_pal[c(5,8)]) +
+p <- SpatialDimPlot(sobj, group.by = "scMRMA_level_2_2",images = "hires", pt.size.factor = 6) + scale_fill_manual(values = my_pal[c(5,8)]) +
   theme(legend.position = "top") + theme(legend.title = element_blank()) + theme(legend.text  = element_text(size=15)) 
+p
 
-if(save_figures){ggsave("local/panels/Final/Main/3/A.Spatial.cell.r1.pdf", width = 20/3, height = 29/3, units = "cm")}
+if(save_figures){ggsave("local/panels/Final/Main/3/Figure.3.a.r2.pdf", width = 20/3, height = 29/3, units = "cm")
+                #saveRDS(p, "data/Figure.3.a.rds")
+  }
 ```
 
-### B
+### Figure 3 b
 ```{r, fig.width = (20/3)/2.54, fig.height = (29/3)/2.54,}
 
 df <- read.table("./local/Visium/bit_table_visium_10xGenmoics(withNeurIPS).csv", header = T, sep=",")
@@ -189,9 +209,11 @@ ggplot(cors, aes(x=reorder(gene, cor), y= cor,fill=cor)) + geom_bar(stat="identi
   theme_classic2() + scale_fill_gradientn(colours = inferno(11)) + ylab("Pearson\n(Real vs ScLinear)") + xlab("Protein") + theme(legend.position = "none") +
   ggtitle("Tonsil Spatial\n(Multi-omics)") + theme(plot.title = element_text(hjust = 0.5))
 
-if(save_figures){ggsave("local/panels/Final/Main/3/B.Cors.spatial.r1.pdf", width = 20/3, height = 29/3, units = "cm")}
+if(save_figures){ggsave("local/panels/Final/Main/3/Figure.3.b.r2.pdf", width = 20/3, height = 29/3, units = "cm")
+                        write.table(cors, "data/Figure.3.b.csv", sep = ",", col.names = TRUE, row.names = FALSE)
+  }
 ```
-### C
+### Figure 3 c
 ```{r, fig.width = (20/3)/2.54, fig.height = (29/3*2)/2.54}
 p1 <- ggplot(df[which(df$gene %in% c("CD19")),], aes(x=predicted, y=real, col=scMRMA_level_2)) + geom_density2d() + stat_cor(inherit.aes = F, aes(x=predicted, y=real)) + theme_classic2() +
   scale_fill_manual(values = kelly()[c(7,5,4,6)]) +  facet_wrap(~gene)+ theme(legend.position = "top") +
@@ -223,10 +245,11 @@ p1 <- p1 + theme(legend.position = "none")
 
 p2 / p1
 
-if(save_figures){ggsave("local/panels/Final/Main/3/C.Spatial.proteins.r1.pdf", width = 20/3, height = (29/3*2), units = "cm")}
+if(save_figures){ggsave("local/panels/Final/Main/3/Figure.3.c.r2.pdf", width = 20/3, height = (29/3*2), units = "cm")
+   write.table(df, "data/Figure.3.c.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 
 ```
-### D
+### Figure 3 d
 
 ```{r, fig.width = (20/3*2)/2.54, fig.height = (29/3)/2.54}
 min_cutoff <- "q10"
@@ -266,11 +289,11 @@ p1<- ggarrange(p1,p2,p3, nrow = 1, ncol = 3)
 p2<- ggarrange(p1.2,p2.2,p3.2, nrow = 1, ncol = 3) 
 p <- ggarrange(p2,p1, nrow = 2)
 p
-if(save_figures){ggsave(plot = p, "local/panels/Final/Main/3/D.CD19.CD3assays.r1.pdf", height = 29/3, width = 20/3*2, units = "cm")}
+if(save_figures){ggsave(plot = p, "local/panels/Final/Main/3/Figure.3.d.r2.pdf", height = 29/3, width = 20/3*2, units = "cm")}
 
 ```
 
-### E
+### Figure 3 e
 ```{r, fig.width = (20/3 * 1.6)/2.54, fig.height = ((29/3) -2)/2.54}
 pbmc <- read.table("local/PBMC/feature_importance_pbmc10k.txt", header = T)
 cd3_cd19_pbmc <- pbmc[c("CD3","CD19"),]
@@ -296,10 +319,12 @@ myBreaks <- c(seq(min(cd3_cd19[genes,3:4]), 0, length.out=ceiling(11/2) + 1),
 pheatmap(t(cd3_cd19[genes,3:4]), color=myColor, breaks=myBreaks, legend = F, cluster_rows = F, treeheight_col = 1,
                    border_color = "black", fontsize_col = 8, labels_row = c("CD3","CD19"))
 
-if(save_figures){ggsave("local/panels/Final/Main/3/E.Heatmap.Top20.r1.pdf", height = (29/3) - 2, width = (20/3*1.6) , units = "cm")}
+if(save_figures){ggsave("local/panels/Final/Main/3/Figure.3.e.r2.pdf", height = (29/3) - 2, width = (20/3*1.6) , units = "cm")
+  write.table(cd3_cd19[genes,3:4], "data/Figure.3.e.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 
 ```
-### F
+
+### Figure 3 f
 
 ```{r, fig.width = (20/3 * 1.5)/2.54, fig.height = (29/3)/2.54}
 go <- enrichr(cd3_tonsil, databases = "GO_Biological_Process_2023")
@@ -333,13 +358,12 @@ ggplot(go, aes(x=reorder(Term, Adjusted.P.value), y=-log10(Adjusted.P.value))) +
   facet_wrap2(~Marker, scales = "free", strip = strip) +
   scale_fill_manual(values = my_pal[c(5,8)]) + theme(legend.position = "none") + theme(axis.text.x = element_text(vjust=0.5))
 
-if(save_figures){ggsave("local/panels/Final/Main/3/F.GO.Top20.r1.pdf", height = 29/3, width = 20/3*1.5, units = "cm")}
+if(save_figures){ggsave("local/panels/Final/Main/3/Figure.3.f.r2.pdf", height = 29/3, width = 20/3*1.5, units = "cm")
+  write.table(go, "data/Figure.3.f.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 ```
 
 
-## Figure 2
-
-### A
+### Figure 2 c
 
 ```{r, fig.width = (20/2)/2.54, fig.height = (29/3)/2.54}
 local_pal <- c("#525240", "#03878F")
@@ -368,9 +392,10 @@ p <- ggplot(DF, aes(x = dropout, y = Pearson, color = type, group = dropout)) +
 
 p
 
-if(save_figures){ggsave(plot = p, "local/panels/Final/Main/2/A.PBMC10K_Dropout_boxplot.r1.pdf", width = 20/2, height = 29/3, units = 'cm')}
+if(save_figures){ggsave(plot = p, "local/panels/Final/Main/2/Figure.2.c.r2.pdf", width = 20/2, height = 29/3, units = 'cm')
+  write.table(DF, "data/Figure.2.c.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 ```
-### B
+### Supplementary Figure 1 c
 
 ```{r, fig.width = (20/2)/2.54, fig.height = (29/3)/2.54}
 local_pal <- c("#525240", "#03878F")
@@ -400,11 +425,12 @@ p <- ggplot(DF, aes(x = dropout, y = Pearson, color = type, group = dropout)) +
 
 p
 
-if(save_figures){ggsave(plot = p, "local/panels/Final/Main/2/B.PBMC5K_Dropout_boxplot.r1.pdf", width = 20/2, height = 29/3, units = 'cm')}
+if(save_figures){ggsave(plot = p, "local/panels/Final/Main/2/Supplementary.Figure.1.c.r2.pdf", width = 20/2, height = 29/3, units = 'cm')
+  write.table(DF, "data/Supplementary.Figure.1.c.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 
 ```
 
-### C
+### Figure 2 d
 
 ```{r, fig.width = (20/2)/2.54, fig.height = (29/3)/2.54}
 DF <- readRDS("local/mls_other_species.rds")
@@ -439,12 +465,12 @@ ggplot(df, aes(x="", y = Pearson, fill = train_test, label = name)) +
   theme(panel.spacing = unit(c(0.1, 0.5, 0.1), "lines"))
   
 
-if(save_figures){ggsave("./local/panels/Final/Main/2/C.MLS_Pearson_correlation_boxplot_mls_trained.r1.pdf" , width = 20/2, height = 29/3, units = 'cm')}
+if(save_figures){ggsave("./local/panels/Final/Main/2/Figure.2.d.r2.pdf" , width = 20/2, height = 29/3, units = 'cm')
+  write.table(df, "data/Figure.2.d.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 ```
 
-## Supplementary 1
 
-## A 
+### Supplementary Figure 1 a
 ```{r, fig.width = (20/2)/2.54, fig.height = (29/3)/2.54}
 PBMC <- read.table("local/PBMC5K/bit_table_pbmc5k_2.csv", header = T, sep=',')
 PBMC <- PBMC %>% dplyr::select(-c(rna_normalized, rna_raw))
@@ -471,11 +497,12 @@ ggplot(cors, aes(x=reorder(gene, correlation), y= correlation,fill=correlation))
     ggtitle("PBMC CITE-seq\n(5k cells)") + theme(plot.title = element_text(hjust = 0.5)) +
     theme( axis.text.y = element_text(size = 8)) 
 
-if(save_figures){ggsave("local/panels/Final/Supplementary/1/A.PBMC5K_Pearson_correlation.r1.pdf" , width = 20/3, height = 29/3, units = 'cm')}
+if(save_figures){ggsave("local/panels/Final/Supplementary/1/Supplementary.Figure.1.a.r2.pdf" , width = 20/3, height = 29/3, units = 'cm')
+  write.table(df, "data/Supplementary.Figure.1.a.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 
 ```
 
-### B
+### Supplementary Figure 1 b
 ```{r, fig.width = (20/2*2)/2.54, fig.height = (29/3)/2.54}
 PBMC2 <- filter(PBMC, gene %in% c("CD19","CD3","CD14","CD56"))
 ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=cell_type_2)) + geom_point(alpha = 0.8, size=0.5) + facet_wrap(~gene, scales = "free") +
@@ -483,7 +510,8 @@ ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=cell_type_2)) + geom_point(a
   geom_smooth(method=lm, se=FALSE, col=my_pal[2], alpha = 0.5) + geom_rug() +
   xlab("ScLinear - Predicted") + ylab("Real")
 
-if(save_figures){ggsave("local/panels/Final/Supplementary/1/B.pbmc5k_Markers.r1.pdf", width = 20/3*2, height = 29/3, units = "cm")}
+if(save_figures){ggsave("local/panels/Final/Supplementary/1/Supplemetary.Figure.1.b.r2.pdf", width = 20/3*2, height = 29/3, units = "cm")
+  write.table(df, "data/Supplementary.Figure.1.b.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 
 ```
 
