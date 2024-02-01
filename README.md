@@ -1,4 +1,4 @@
-This repository includes additional source code and accompanying information for the manuscript "scLinear; against the deep current to predict protein abundance at single-cell resolution".
+This repository includes additional source code and accompanying information for the manuscript "scLinear predicts protein abundance at single-cell resolution".
 The main repository which includes the R package for scLinear can be found here: https://github.com/DanHanh/scLinear
 
 - PBMC10K data: https://www.10xgenomics.com/datasets/10-k-pbm-cs-from-a-healthy-donor-gene-expression-and-cell-surface-protein-3-standard-3-0-0
