@@ -256,71 +256,9 @@ DF$gene <- factor(DF$gene, levels = unique(DF$gene))
 
 write.table(DF, file = "./../local/PBMC5K/bit_table_pbmc5k_2.csv", sep = ",", col.names = TRUE, row.names = FALSE)
 ```
+
+
 #### RNA / protein correlation
-
-##### barplot 
-```{r, fig.width= 15, fig.height = 10}
-my_pal <- c("#E7E7E0","#A2A187", "#525240", "#03878F", "#F2B531","#ED5958","#68C6A4", "#113245")
-
-DF <- read.table("./../local/PBMC5K/bit_table_pbmc5k_2.csv", header = T, sep=',')
-d <- DF %>% na.omit() %>% group_by(gene)  %>%
-      summarize(pearson_pADT_vs_rADT = cor(real, predicted_sclinear, method = "pearson"),
-                pearson_normalizedRNA_vs_rADT = cor(real, rna_normalized, method = "pearson"),
-                pearson_rawRNA_vs_rADT = cor(real, rna_raw, method = "pearson"))
-
-
-d <- d %>% pivot_longer(!gene, values_to = "pearson", names_to = "comparison") %>% arrange(desc(pearson))
-
-d$gene <- factor(d$gene, levels = unique(d$gene))
-d$comparison <- factor(d$comparison, levels = c("pearson_pADT_vs_rADT", "pearson_normalizedRNA_vs_rADT", "pearson_rawRNA_vs_rADT"))
-
-p <- ggplot(d, aes(x = gene, y = pearson, fill = comparison)) + geom_bar(stat="identity", position=position_dodge()) +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  scale_fill_manual(values = rev(c(my_pal))[5:length(my_pal)], 
-                    labels=c('Predicted ADT vs meassured ADT', 'Normalized RNA expression vs meassured ADT', 'Raw RNA expression vs meassured ATD')) +
-  labs(fill = "Pearson Correlation") 
-  
-p
-
-#ggsave("./../local/panels/Final/Supplementary/1/A.PBMC5K_Protein_RNA_correlation.r1.pdf", width = 20, height = 29/4, units = 'cm')
-
-```
-##### Heatmap
-
-```{r, fig.width= 20/2, fig.height = 29/2}
-my_pal <- c("#E7E7E0","#A2A187", "#525240", "#03878F", "#F2B531","#ED5958","#68C6A4", "#113245")
-
-DF <- read.table("./../local/PBMC5K/bit_table_pbmc5k_2.csv", header = T, sep=',')
-d <- DF %>% na.omit() %>% group_by(gene)  %>%
-      summarize(pearson_pADT_vs_rADT = cor(real, predicted_sclinear, method = "pearson"),
-                pearson_normalizedRNA_vs_rADT = cor(real, rna_normalized, method = "pearson"),
-                pearson_rawRNA_vs_rADT = cor(real, rna_raw, method = "pearson")) %>% column_to_rownames("gene")
-
-d <- d %>% arrange(desc(pearson_pADT_vs_rADT),desc(pearson_normalizedRNA_vs_rADT), desc(pearson_rawRNA_vs_rADT))
-
-p <- ComplexHeatmap::pheatmap(d, scale = "row", 
-                   cluster_rows = FALSE, cluster_cols = FALSE,
-                   display_numbers = round(as.matrix(d),2),
-                   labels_col = c('Predicted ADT\nvs\nMeasured ADT\n\n', 'Normalized RNA Expression\nvs\nMeasured ADT\n\n', 'Raw RNA Expression\nvs\nMeasured ATD\n\n'),
-                   legend = TRUE,
-                   angle_col = c("0"),
-                   color = rev(brewer.rdbu(11))[2:10],
-                   number_color = "black", border_color = "white", border = TRUE, border_gp = gpar(col = "black", lty = 1, lwd = 1.5),
-                   number_format ="%.2f"  , fontsize_number = 6,
-                   column_names_side = c("top"), row_names_side = c("left"),
-                   fontsize = 6,
-                   fontsize_row = 6,
-                   fontsize_col = 5,
-                   column_names_max_height = unit(100, "cm"),
-                   heatmap_legend_param = list(title = "z score"))
-
-ComplexHeatmap::draw(p, padding = unit(c(0, 0, 20, 0), "mm"))
-
-pdf("./../local/panels/Final/Supplementary/1/D.PBMC5K_Protein_RNA_correlation_heatmap.r1.pdf", width = (20/2)/2.54, height = (29/3 *2)/2.54)
-  ComplexHeatmap::draw(p, padding = unit(c(2, 2, 20, 2), "mm"))
-dev.off()
-```
 
 ##### Boxplots
 ```{r, fig.width= 20/2, fig.height = 29/2}
@@ -609,74 +547,6 @@ p
 #ggsave(plot = p, "./../local/panels/Final/Main/2/B.PBMC5K_Dropout_boxplot.r1.pdf", width = 20/2, height = 29/3, units = 'cm')
 ```
 
-
-
-
-
-
-
-
-
-
-```{r}
-# pbmc5k <- readRDS("./../local/PBMC5K_prepared2.rds")
-# 
-# ## load pretrained predictor model scLinear
-# pipe <- create_adt_predictor()
-# pipe <- load_pretrained_model(pipe, model = "all")
-# 
-# 
-# dropout_res <- NULL
-# ## add results without noise
-# eval_res <- evaluate_predictor(pipe, pbmc5k@assays$RNA, pbmc5k@assays$ADT)
-# df <- GetAssayData(pbmc5k, assay = "RNA", slot = "counts")
-# index <- which(df != 0)
-# drops <- matrix(nrow = nrow(df), ncol = ncol(df), data = 1)
-# drops[index] <- 0
-# R <- nrow(df)
-# C <- ncol(df)
-# drop_rate <- length(which(drops == 1))/(R*C)
-# dropout_res <- rbind(dropout_res, data.frame(dropout = drop_rate, RMSE= eval_res$RMSE, Pearson = eval_res$Pearson, Spearman = eval_res$Spearman, type = "original"))
-# rm(eval_res, R, C, index, df, drops)
-# gc()
-# 
-# dropout_data_list <- readRDS("./../local/pbmc5k_dropout_list.rds")
-# for(i in names(dropout_data_list)){
-#   print(i)
-#   obj <- pbmc5k
-#   obj@assays$RNA <- Seurat::CreateAssayObject(counts = dropout_data_list[[i]])
-#   eval_res <- evaluate_predictor(pipe, obj@assays$RNA, obj@assays$ADT)
-#   dropout_res <- rbind(dropout_res, data.frame(dropout = i, RMSE= eval_res$RMSE, Pearson = eval_res$Pearson, Spearman = eval_res$Spearman, type = "added_noise"))
-#   rm(eval_res)
-# }
-# 
-# saveRDS(dropout_res, "./../local/dropout_res_pbmc5k.rds")
-
-```
-
-
-```{r}
-# my_pal <- c("#525240", "#03878F")
-# 
-# dropout_res <- readRDS("./../local/dropout_res_pbmc5k.rds")
-# 
-# dropout_res$dropout <- as.numeric(dropout_res$dropout )
-# p <- ggplot(dropout_res, aes(x=dropout, y=Pearson, col=type)) + geom_point(size=2) + theme_classic2() + 
-#   scale_color_manual(values = c(my_pal)) + scale_fill_manual(values = c(my_pal)) +
-#   theme(legend.position = "none") +
-#   theme(legend.title = element_blank()) +
-#   theme(legend.text = element_text(size = 8)) +
-#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-#   xlim(c(NA,1.01)) +
-#   scale_x_continuous(labels = scales::number_format(accuracy = 0.01, decimal.mark = '.'),
-#                      breaks = seq(round(min(dropout_res$dropout), 2), 1, by = 0.01)) +
-#   xlab("Dropout rate") +
-#   ylab("Pearson")
-#   
-# p
-# 
-# ggsave(plot = p, "./../local/panels/Final/Main/2/B.PBMC5K_Dropout.r1.pdf", width = 20/2, height = 29/4, units = 'cm')
-```
 
 ```{r}
 

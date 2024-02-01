@@ -162,6 +162,7 @@ if(save_figures){ggsave("local/panels/Final/Main/1/Figure.2.a.r2.pdf", width = 2
 ### Figure 2 b
 ```{r, fig.width = (20/3*2)/2.54, fig.height = (29/3)/2.54,}
 PBMC2 <- filter(PBMC, gene %in% c("CD19","CD3","CD14","CD56"))
+
 ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=cell_type_2)) + geom_point(alpha = 0.8, size=0.5) + facet_wrap(~gene, scales = "free") +
   scale_color_manual(values = my_pal[5:8]) + theme_classic2() + theme(legend.title = element_blank()) +
   geom_smooth(method=lm, se=FALSE, col=my_pal[2], alpha = 0.5) + geom_rug() +
@@ -320,7 +321,7 @@ pheatmap(t(cd3_cd19[genes,3:4]), color=myColor, breaks=myBreaks, legend = F, clu
                    border_color = "black", fontsize_col = 8, labels_row = c("CD3","CD19"))
 
 if(save_figures){ggsave("local/panels/Final/Main/3/Figure.3.e.r2.pdf", height = (29/3) - 2, width = (20/3*1.6) , units = "cm")
-  write.table(cd3_cd19[genes,3:4], "data/Figure.3.e.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
+  write.table(cd3_cd19[genes,3:4] %>% as.data.frame() %>%rownames_to_column("gene"), "data/Figure.3.e.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 
 ```
 
@@ -498,19 +499,20 @@ ggplot(cors, aes(x=reorder(gene, correlation), y= correlation,fill=correlation))
     theme( axis.text.y = element_text(size = 8)) 
 
 if(save_figures){ggsave("local/panels/Final/Supplementary/1/Supplementary.Figure.1.a.r2.pdf" , width = 20/3, height = 29/3, units = 'cm')
-  write.table(df, "data/Supplementary.Figure.1.a.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
+  write.table(cors, "data/Supplementary.Figure.1.a.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 
 ```
 
 ### Supplementary Figure 1 b
 ```{r, fig.width = (20/2*2)/2.54, fig.height = (29/3)/2.54}
 PBMC2 <- filter(PBMC, gene %in% c("CD19","CD3","CD14","CD56"))
+
 ggplot(PBMC2, aes(x=predicted_sclinear, y=real, col=cell_type_2)) + geom_point(alpha = 0.8, size=0.5) + facet_wrap(~gene, scales = "free") +
   scale_color_manual(values = my_pal[5:8]) + theme_classic2() + theme(legend.title = element_blank()) +
   geom_smooth(method=lm, se=FALSE, col=my_pal[2], alpha = 0.5) + geom_rug() +
   xlab("ScLinear - Predicted") + ylab("Real")
 
 if(save_figures){ggsave("local/panels/Final/Supplementary/1/Supplemetary.Figure.1.b.r2.pdf", width = 20/3*2, height = 29/3, units = "cm")
-  write.table(df, "data/Supplementary.Figure.1.b.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
+  write.table(PBMC2, "data/Supplementary.Figure.1.b.csv", sep = ",", col.names = TRUE, row.names = FALSE)}
 
 ```
