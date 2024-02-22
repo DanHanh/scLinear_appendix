@@ -106,6 +106,9 @@ ggplot(Time_sum, aes(x=Method, y=Mean, fill=Method)) + geom_bar(stat="identity")
   
 if(save_figures){ggsave("local/panels/Final/Main/1/Figure.1.c.r2.pdf", width = 20/3, height = 29/4, units = 'cm')
   write.table(Time_sum, "data/Figure.1.c.csv", sep = ",", col.names = TRUE, row.names = FALSE)
+  write.table(Time, "data/Figure.1.c(points).csv", sep = ",", col.names = TRUE, row.names = FALSE)
+  
+  write.table(Time_RAM, "data/Figure.1.c,d(points).csv", sep = ",", col.names = TRUE, row.names = FALSE)
   
   }
 ```
@@ -123,6 +126,7 @@ ggplot(RAM_sum, aes(x=Method, y=Mean, fill=Method)) + geom_bar(stat="identity") 
   
 if(save_figures){ggsave("local/panels/Final/Main/1/Figure.1.d.r2.pdf", width = 20/3, height = 29/4, units = 'cm')
     write.table(RAM_sum, "data/Figure.1.d.csv", sep = ",", col.names = TRUE, row.names = FALSE)
+    write.table(RAM, "data/Figure.1.d(points).csv", sep = ",", col.names = TRUE, row.names = FALSE)
   
   }
 ```
